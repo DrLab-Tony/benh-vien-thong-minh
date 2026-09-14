@@ -466,13 +466,13 @@ CSS_STYLES = r"""
         padding-right: 1.2rem !important;
         max-width: 100% !important;
     }
+
     /* ==============================================================
        CHUẨN HÓA KÍCH THƯỚC VÀ CĂN THẲNG HÀNG DANH MỤC SIDEBAR
        ============================================================== */
-    /* Định dạng nổi bật chữ DANH MỤC trên nền Sidebar tối */
     .sidebar-menu-title {
         display: block !important;
-        color: #7DD3FC !important; /* Màu xanh sáng (Sky Blue) tương phản cao */
+        color: #7DD3FC !important;
         font-size: 15px !important;
         font-weight: 800 !important;
         letter-spacing: 1.2px !important;
@@ -481,7 +481,6 @@ CSS_STYLES = r"""
         opacity: 0.9 !important;
     }
     
-    /* 1. Thu gọn chiều rộng cột trái vừa vặn (260px) */
     [data-testid="stSidebar"] { 
         min-width: 260px !important;
         max-width: 260px !important;
@@ -495,7 +494,6 @@ CSS_STYLES = r"""
         padding-right: 0.6rem !important;
     }
 
-    /* 2. Ép toàn bộ nút menu căn thẳng lề trái tuyệt đối, bằng phẳng từ trên xuống */
     [data-testid="stSidebar"] div[data-testid="stButton"] {
         width: 100% !important;
         margin: 0 !important;
@@ -516,7 +514,6 @@ CSS_STYLES = r"""
         box-sizing: border-box !important;
     }
 
-    /* 3. Căn icon và dòng chữ luôn thẳng tắp một hàng dọc, không xô lệch */
     [data-testid="stSidebar"] div[data-testid="stButton"] > button p,
     [data-testid="stSidebar"] div[data-testid="stButton"] > button div,
     [data-testid="stSidebar"] div[data-testid="stButton"] > button span {
@@ -531,7 +528,6 @@ CSS_STYLES = r"""
         padding: 0 !important;
     }
 
-    /* 4. Trạng thái nút chưa chọn */
     [data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"] {
         background: transparent !important;
         color: #93C5FD !important;
@@ -541,7 +537,6 @@ CSS_STYLES = r"""
         color: #FFFFFF !important;
     }
 
-    /* 5. Trạng thái nút đang chọn (Active) */
     [data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="primary"] {
         background: #0284C7 !important;
         color: #FFFFFF !important;
@@ -582,7 +577,7 @@ CSS_STYLES = r"""
     }
     .user-badge-bottom b { color: #FFFFFF !important; font-size: 13px !important; display: block; margin-bottom: 2px; }
     .user-badge-bottom small { color: #38BDF8 !important; font-weight: 600; }
-    /* Tự động bo tròn và đổ bóng cho khung Biểu đồ Plotly (GIỮ LẠI) */
+    
     .stPlotlyChart {
         background: #FFFFFF !important;
         border: 1px solid #E2ECF5 !important;
@@ -595,19 +590,15 @@ CSS_STYLES = r"""
         overflow: hidden !important;
     }
 
-    /* ==============================================================
-       BANNER BÁC SĨ THU GỌN VỪA KHUNG HÌNH (HEIGHT 175PX)
-       ============================================================== */
+    /* BANNER BÁC SĨ */
     .hero-banner-compact {
         position: relative !important;
         width: 100% !important;
-        /* Dùng aspect-ratio để chiều cao tự co theo tỷ lệ ảnh gốc, không bị cắt */
         aspect-ratio: 1000 / 270 !important;
         height: auto !important;
         min-height: 155px !important;
         max-height: 200px !important;
         border-radius: 18px !important;
-        /* Co giãn vừa khít 100% cả chiều ngang lẫn chiều dọc */
         background-size: 100% 100% !important;
         background-position: center !important;
         background-repeat: no-repeat !important;
@@ -633,181 +624,148 @@ CSS_STYLES = r"""
         font-weight: 600 !important;
     }
 
+    /* CƠ BẢN TOÀN TRANG */
+    .stApp { background:#F4F8FC; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; }
+    [data-testid="stAppViewContainer"] { background:#F4F8FC; }
+    .ticker-wrap {
+        width: 100%; overflow: hidden; background: linear-gradient(90deg, #0F3D64 0%, #1D5B8C 50%, #0F3D64 100%);
+        border-radius: 10px; padding: 9px 12px; margin-bottom: 16px; box-shadow: 0 3px 10px rgba(15, 61, 100, 0.15); border-left: 4px solid #F59E0B;
+    }
+    .ticker-text { font-size: 13.5px; font-weight: 600; color: #FFFFFF; letter-spacing: 0.3px; }
+    .ticker-highlight { color: #FDE047; font-weight: 700; }
+    .dashboard-card { background: #FFFFFF; border: 1px solid #E2ECF5; border-radius: 16px; padding: 18px 20px; box-shadow: 0 4px 16px rgba(20, 70, 110, 0.03); margin-bottom: 16px; }
+    .card-title { font-size: 15px; font-weight: 800; color: #12385C; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    
+    .summary-card { 
+        background: #FFFFFF; 
+        border: 1px solid #E2ECF5; 
+        border-radius: 14px; 
+        padding: 9px 12px; 
+        display: flex; 
+        align-items: center; 
+        gap: 10px; 
+        box-shadow: 0 2px 8px rgba(20, 70, 110, 0.02); 
+        margin-bottom: 14px;
+    }
+    .summary-icon { 
+        width: 36px; 
+        height: 36px; 
+        border-radius: 10px; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        font-size: 17px; 
+        flex-shrink: 0;
+    }
+    .summary-label { font-size: 11px; color: #71889D; font-weight: 600; line-height: 1.1; }
+    .summary-val { font-size: 15px; font-weight: 800; color: #0E355B; margin: 2px 0 1px 0; line-height: 1.2; }
+    .summary-sub { font-size: 10px; color: #8CA0B2; line-height: 1.1; }
+    .status-badge { background: #E8F8F0; color: #109655; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 20px; }
+    .slogan-footer { background: linear-gradient(135deg, #1E3A8A 0%, #0D9488 100%); color: #FFFFFF; text-align: center; padding: 20px; border-radius: 12px; font-size: 20px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 35px; box-shadow: 0 4px 12px rgba(30, 58, 138, 0.15); }
+
     /* ==============================================================
-       THIẾT KẾ 4 NÚT DỊCH VỤ Y TẾ NHANH (2 TRÁI - 2 PHẢI)
+       1. KHỐI DỊCH VỤ Y TẾ NHANH (NÚT BẤM GỌN GÀNG, SÁT NHAU)
        ============================================================== */
-    .quick-service-2x2 div[data-testid="stButton"] > button {
+    .tight-service-box div[data-testid="stButton"] > button {
         background: #FFFFFF !important;
         border: 1px solid #CBD5E1 !important;
-        border-radius: 12px !important;
-        height: 52px !important;
+        border-radius: 10px !important;
+        height: 46px !important;
         width: 100% !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        padding: 4px 10px !important;
-        box-shadow: 0 2px 6px rgba(15, 60, 100, 0.05) !important;
-        transition: all 0.15s ease !important;
+        padding: 4px 8px !important;
+        box-shadow: 0 1px 3px rgba(15, 60, 100, 0.04) !important;
     }
-
-    .quick-service-2x2 div[data-testid="stButton"] > button:hover {
+    .tight-service-box div[data-testid="stButton"] > button:hover {
         background: #F0F9FF !important;
         border-color: #0284C7 !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.18) !important;
     }
-
-    .quick-service-2x2 div[data-testid="stButton"] > button p {
+    .tight-service-box div[data-testid="stButton"] > button p {
         font-size: 12.5px !important;
         font-weight: 700 !important;
         color: #0F172A !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
         margin: 0 !important;
+        white-space: nowrap !important;
     }
-
-    .stApp { background:#F4F8FC; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; }
-    [data-testid="stAppViewContainer"] { background:#F4F8FC; }
-    .ticker-wrap {
-        width: 100%; overflow: hidden; background: linear-gradient(90deg, #0F3D64 0%, #1D5B8C 50%, #0F3D64 100%);
-        border-radius: 10px; padding: 9px 12px; margin-bottom: 16px; box-shadow: 0 3px 10px rgba(15, 61, 100, 0.15); border-left: 4px solid #F59E0B;
-    }
-    .ticker-text { font-size: 13.5px; font-weight: 600; color: #FFFFFF; letter-spacing: 0.3px; }
-    .ticker-highlight { color: #FDE047; font-weight: 700; }
-    .dashboard-card { background: #FFFFFF; border: 1px solid #E2ECF5; border-radius: 16px; padding: 18px 20px; box-shadow: 0 4px 16px rgba(20, 70, 110, 0.03); margin-bottom: 16px; }
-    .card-title { font-size: 15px; font-weight: 800; color: #12385C; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
-    /* Co nhỏ 3 thẻ thống kê và tạo khoảng đệm với hàng bên dưới */
-    .summary-card { 
-        background: #FFFFFF; 
-        border: 1px solid #E2ECF5; 
-        border-radius: 14px; 
-        padding: 9px 12px; 
-        display: flex; 
-        align-items: center; 
-        gap: 10px; 
-        box-shadow: 0 2px 8px rgba(20, 70, 110, 0.02); 
-        margin-bottom: 14px;
-    }
-    .summary-icon { 
-        width: 36px; 
-        height: 36px; 
-        border-radius: 10px; 
-        display: flex; 
-        align-items: center; 
-        justify-content: center; 
-        font-size: 17px; 
-        flex-shrink: 0;
-    }
-    .summary-label { 
-        font-size: 11px; 
-        color: #71889D; 
-        font-weight: 600; 
-        line-height: 1.1;
-    }
-    .summary-val { 
-        font-size: 15px; 
-        font-weight: 800; 
-        color: #0E355B; 
-        margin: 2px 0 1px 0; 
-        line-height: 1.2;
-    }
-    .summary-sub { 
-        font-size: 10px; 
-        color: #8CA0B2; 
-        line-height: 1.1;
-    }
-    .status-badge { background: #E8F8F0; color: #109655; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 20px; }
-    .slogan-footer { background: linear-gradient(135deg, #1E3A8A 0%, #0D9488 100%); color: #FFFFFF; text-align: center; padding: 20px; border-radius: 12px; font-size: 20px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 35px; box-shadow: 0 4px 12px rgba(30, 58, 138, 0.15); }
 
     /* ==============================================================
-       DANH SÁCH TIN TỨC GỌN GÀNG (CLICK TRỰC TIẾP VÀO DÒNG TIN)
+       DANH SÁCH TIN TỨC GỌN GÀNG: ẢNH NHỎ 42PX, CHỮ TRẢI ĐẦY, KHÔNG VIỀN
        ============================================================== */
-    .news-list-clickable div[data-testid="stButton"] > button {
-        background: transparent !important;
-        border: none !important;
-        box-shadow: none !important;
-        padding: 2px 4px !important;
-        height: auto !important;
-        min-height: 44px !important;
-        text-align: left !important;
-        justify-content: flex-start !important;
-        align-items: flex-start !important;
-        border-radius: 6px !important;
-        margin-bottom: 6px !important;
+    .news-list-flex-container {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        margin-top: 2px;
+    }
+
+    .news-item-row {
+        display: flex !important;
+        align-items: center !important;
+        gap: 10px !important;
+        padding: 5px 6px !important;
+        text-decoration: none !important;
+        border-radius: 8px !important;
         transition: background 0.15s ease !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
     }
 
-    .news-list-clickable div[data-testid="stButton"] > button:hover {
-        background: #F1F5F9 !important;
+    .news-item-row:hover {
+        background-color: #F1F5F9 !important;
     }
 
-    .news-list-clickable div[data-testid="stButton"] > button p {
-        font-size: 12px !important;
+    /* Ép ảnh thumbnail nhỏ gọn đúng 42px x 42px */
+    .news-item-thumb {
+        width: 42px !important;
+        height: 42px !important;
+        min-width: 42px !important;
+        min-height: 42px !important;
+        border-radius: 8px !important;
+        object-fit: cover !important;
+        flex-shrink: 0 !important;
+        display: block !important;
+    }
+
+    /* Khối chữ sát ảnh, trải đều hết sang phải */
+    .news-item-content {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+    }
+
+    .news-item-title {
+        font-size: 12.5px !important;
         font-weight: 700 !important;
         color: #0F172A !important;
         line-height: 1.35 !important;
+        margin: 0 0 2px 0 !important;
+        display: -webkit-box !important;
+        -webkit-line-clamp: 2 !important;
+        -webkit-box-orient: vertical !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
         text-align: left !important;
-        white-space: normal !important;
-        margin: 0 !important;
     }
 
-    .news-list-clickable div[data-testid="stButton"] > button:hover p {
+    .news-item-row:hover .news-item-title {
         color: #0284C7 !important;
     }
 
-    .stApp { background:#F4F8FC; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; }
-    [data-testid="stAppViewContainer"] { background:#F4F8FC; }
-    .ticker-wrap {
-        width: 100%; overflow: hidden; background: linear-gradient(90deg, #0F3D64 0%, #1D5B8C 50%, #0F3D64 100%);
-        border-radius: 10px; padding: 9px 12px; margin-bottom: 16px; box-shadow: 0 3px 10px rgba(15, 61, 100, 0.15); border-left: 4px solid #F59E0B;
+    .news-item-date {
+        font-size: 10.5px !important;
+        color: #94A3B8 !important;
+        font-weight: 500 !important;
+        text-align: left !important;
     }
-    .ticker-text { font-size: 13.5px; font-weight: 600; color: #FFFFFF; letter-spacing: 0.3px; }
-    .ticker-highlight { color: #FDE047; font-weight: 700; }
-    .dashboard-card { background: #FFFFFF; border: 1px solid #E2ECF5; border-radius: 16px; padding: 18px 20px; box-shadow: 0 4px 16px rgba(20, 70, 110, 0.03); margin-bottom: 16px; }
-    .card-title { font-size: 15px; font-weight: 800; color: #12385C; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
-    /* Co nhỏ 3 thẻ thống kê và tạo khoảng đệm với hàng bên dưới */
-    .summary-card { 
-        background: #FFFFFF; 
-        border: 1px solid #E2ECF5; 
-        border-radius: 14px; 
-        padding: 9px 12px; 
-        display: flex; 
-        align-items: center; 
-        gap: 10px; 
-        box-shadow: 0 2px 8px rgba(20, 70, 110, 0.02); 
-        margin-bottom: 14px;
+
+    .news-item-divider {
+        border-bottom: 1px solid #F1F5F9;
+        margin: 2px 4px 4px 4px;
     }
-    .summary-icon { 
-        width: 36px; 
-        height: 36px; 
-        border-radius: 10px; 
-        display: flex; 
-        align-items: center; 
-        justify-content: center; 
-        font-size: 17px; 
-        flex-shrink: 0;
-    }
-    .summary-label { 
-        font-size: 11px; 
-        color: #71889D; 
-        font-weight: 600; 
-        line-height: 1.1;
-    }
-    .summary-val { 
-        font-size: 15px; 
-        font-weight: 800; 
-        color: #0E355B; 
-        margin: 2px 0 1px 0; 
-        line-height: 1.2;
-    }
-    .summary-sub { 
-        font-size: 10px; 
-        color: #8CA0B2; 
-        line-height: 1.1;
-    }
-    .status-badge { background: #E8F8F0; color: #109655; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 20px; }
-    .slogan-footer { background: linear-gradient(135deg, #1E3A8A 0%, #0D9488 100%); color: #FFFFFF; text-align: center; padding: 20px; border-radius: 12px; font-size: 20px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 35px; box-shadow: 0 4px 12px rgba(30, 58, 138, 0.15); }
 </style>
 """
 st.markdown(CSS_STYLES, unsafe_allow_html=True)
@@ -1422,86 +1380,61 @@ if st.session_state.main_navigation == "🏠 Tổng quan sức khỏe":
         # ==============================================================
         # 4. HÀNG DƯỚI CÙNG: DỊCH VỤ Y TẾ NHANH (TRÁI) & TIN TỨC Y TẾ (PHẢI)
         # ==============================================================
-        st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
-        col_quick_box, col_news_box = st.columns([1.35, 1.0], gap="medium")
+        st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+        col_quick_box, col_news_box = st.columns([1.3, 1.0], gap="medium")
 
-        # CỘT TRÁI: DỊCH VỤ Y TẾ NHANH (CHIA 2 TRÁI - 2 PHẢI RỘNG RÃI)
+        # CỘT TRÁI: DỊCH VỤ Y TẾ NHANH
         with col_quick_box:
             with st.container(border=True):
                 st.markdown("""
-                    <div style="font-size: 15px; font-weight: 800; color: #0F172A; margin-bottom: 10px;">
+                    <div style="font-size: 15px; font-weight: 800; color: #0F172A; margin-bottom: 8px;">
                         👉👉👉 Dịch Vụ Y Tế Nhanh
                     </div>
                 """, unsafe_allow_html=True)
 
-                # Hàm điều hướng kết hợp mở đúng Tab con
                 def go_to_online_clinic(target_sub_tab="triage"):
                     st.session_state.main_navigation = "🧑‍⚕️Khám Bệnh Online (Trợ Lý Y Tế)"
                     st.session_state.clinic_active_tab = target_sub_tab
                     st.session_state.current_reading_article_id = None
 
-                st.markdown('<div class="quick-service-2x2">', unsafe_allow_html=True)
-                
-                # Hàng 1: 1 nút Trái (Đặt lịch) - 1 nút Phải (Xét nghiệm)
+                st.markdown('<div class="tight-service-box">', unsafe_allow_html=True)
                 r1_c1, r1_c2 = st.columns(2, gap="small")
                 with r1_c1:
-                    st.button(
-                        "📅 Đặt lịch khám bệnh",
-                        key="btn_quick_app_2x2",
-                        on_click=switch_nav,
-                        args=("🩺 Khám Sức Khỏe & Đặc Quyền VIP",),
-                        use_container_width=True
-                    )
+                    st.button("📅 Đặt lịch khám bệnh", key="btn_q_app", on_click=switch_nav, args=("🩺 Khám Sức Khỏe & Đặc Quyền VIP",), use_container_width=True)
                 with r1_c2:
-                    st.button(
-                        "🧪 Xét nghiệm tại nhà",
-                        key="btn_quick_test_2x2",
-                        on_click=switch_nav,
-                        args=("🩺 Khám Sức Khỏe & Đặc Quyền VIP",),
-                        use_container_width=True
-                    )
+                    st.button("🧪 Xét nghiệm tại nhà", key="btn_q_test", on_click=switch_nav, args=("🩺 Khám Sức Khỏe & Đặc Quyền VIP",), use_container_width=True)
 
-                st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
-
-                # Hàng 2: 1 nút Trái (Khám bệnh online) - 1 nút Phải (Đơn thuốc)
                 r2_c1, r2_c2 = st.columns(2, gap="small")
                 with r2_c1:
-                    st.button(
-                        "🧑‍⚕️ Khám bệnh online",
-                        key="btn_quick_ai_2x2",
-                        on_click=go_to_online_clinic,
-                        args=("triage",),
-                        use_container_width=True
-                    )
+                    st.button("🧑‍⚕️ Khám bệnh online", key="btn_q_ai", on_click=go_to_online_clinic, args=("triage",), use_container_width=True)
                 with r2_c2:
-                    st.button(
-                        "💊 Đơn thuốc & Lịch uống",
-                        key="btn_quick_med_2x2",
-                        on_click=go_to_online_clinic,
-                        args=("prescriptions",),
-                        use_container_width=True
-                    )
+                    st.button("💊 Đơn thuốc & Lịch uống", key="btn_q_med", on_click=go_to_online_clinic, args=("prescriptions",), use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # CỘT PHẢI: TIN TỨC Y TẾ (CLICK TRỰC TIẾP VÀO BÀI ĐỂ ĐỌC)
+        # CỘT PHẢI: TIN TỨC Y TẾ (HTML SẠCH 100%, KHÔNG BỊ IN MÃ THÔ)
         with col_news_box:
             with st.container(border=True):
-                # Hàm chuyển thẳng vào bài viết cụ thể
-                def open_news_article(article_id):
+                if "read_news_id" in st.query_params:
+                    selected_art_id = int(st.query_params["read_news_id"])
+                    st.query_params.clear()
                     st.session_state.main_navigation = "📰 Tin tức & Khuyến cáo y tế"
-                    st.session_state.current_reading_article_id = article_id
+                    st.session_state.current_reading_article_id = selected_art_id
+                    st.rerun()
 
-                col_n_head, col_n_more = st.columns([1.7, 1.1])
+                col_n_head, col_n_more = st.columns([1.5, 1.3])
                 with col_n_head:
                     st.markdown("""
-                        <div style="font-size: 15px; font-weight: 800; color: #0F172A; padding-top: 4px;">
+                        <div style="font-size: 15px; font-weight: 800; color: #0F172A; padding-top: 2px;">
                             Tin tức y tế
                         </div>
                     """, unsafe_allow_html=True)
                 with col_n_more:
-                    st.button("Xem tất cả ➔", key="btn_see_all_news_redesign", on_click=switch_nav, args=("📰 Tin tức & Khuyến cáo y tế",), use_container_width=True)
+                    if st.button("Xem tất cả ➔", key="btn_see_all_news_redesign", use_container_width=True):
+                        st.session_state.main_navigation = "📰 Tin tức & Khuyến cáo y tế"
+                        st.session_state.current_reading_article_id = None
+                        st.rerun()
 
-                st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
 
                 news_items = [
                     {
@@ -1520,28 +1453,27 @@ if st.session_state.main_navigation == "🏠 Tổng quan sức khỏe":
                         "id": 2,
                         "title": "Bản chất của ung thư & 7 tín hiệu 'kẻ thù thầm lặng'",
                         "date": "18/08/2026",
-                        "img": "https://images.unsplash.com/photo-1579154204601-01588f351e67?w=120&auto=format&fit=crop&q=60"
+                        "img": "https://images.unsplash.com/photo-1579154204601-01588f351e67?w=120&auto=format&fit=crop&q=80"
                     }
                 ]
 
-                # Render từng tin tức dưới dạng một hàng liền mạch có thể click
-                st.markdown('<div class="news-list-clickable">', unsafe_allow_html=True)
+                # Tạo chuỗi HTML sát lề trái, loại bỏ hoàn toàn khoảng thụt đầu dòng
+                rows_html = []
                 for item in news_items:
-                    c_thumb, c_btn = st.columns([0.22, 0.78], gap="small")
-                    with c_thumb:
-                        st.markdown(f"""
-                            <img src="{item['img']}" style="width: 44px; height: 44px; border-radius: 8px; object-fit: cover; display: block; margin-top: 2px;" />
-                        """, unsafe_allow_html=True)
-                    with c_btn:
-                        btn_label = f"**{item['title']}**\n\n🕒 {item['date']}"
-                        st.button(
-                            btn_label,
-                            key=f"btn_news_card_{item['id']}",
-                            on_click=open_news_article,
-                            args=(item["id"],),
-                            use_container_width=True
-                        )
-                st.markdown('</div>', unsafe_allow_html=True)
+                    row = (
+                        f'<a href="?read_news_id={item["id"]}" target="_self" class="news-item-row">'
+                        f'<img src="{item["img"]}" class="news-item-thumb" />'
+                        f'<div class="news-item-content">'
+                        f'<div class="news-item-title">{item["title"]}</div>'
+                        f'<div class="news-item-date">🕒 {item["date"]}</div>'
+                        f'</div>'
+                        f'</a>'
+                        f'<div class="news-item-divider"></div>'
+                    )
+                    rows_html.append(row)
+
+                full_news_html = f'<div class="news-list-flex-container">{"".join(rows_html)}</div>'
+                st.markdown(full_news_html, unsafe_allow_html=True)
 
     # ============================================================
     # CỘT PHỤ (BÊN PHẢI NGANG HÀNG VỚI COL_MAIN)
@@ -1637,6 +1569,8 @@ if st.session_state.main_navigation == "🏠 Tổng quan sức khỏe":
             with c_med_t2:
                 if st.button("Xem tất cả →", key="btn_view_all_prescriptions", width="stretch"):
                     st.session_state.main_navigation = "🧑‍⚕️Khám Bệnh Online (Trợ Lý Y Tế)"
+                    st.session_state.clinic_active_tab = "prescriptions"
+                    st.session_state.current_reading_article_id = None
                     st.rerun()
 
             if not dash_my_prescriptions:
@@ -1648,29 +1582,32 @@ if st.session_state.main_navigation == "🏠 Tổng quan sức khỏe":
                     </div>
                 """, unsafe_allow_html=True)
             else:
-                med_items_html = ""
+                med_rows = []
                 for med in dash_my_prescriptions:
                     med_name, med_dos, med_time, _ = med
-                    med_items_html += f"""
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #F8FAFC;">
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <span style="font-size:16px;">💊</span>
-                                <div>
-                                    <div style="font-size:11.5px; font-weight:800; color:#0F172A;">{med_name}</div>
-                                    <div style="font-size:9.5px; color:#64748B;">{med_dos}</div>
-                                </div>
-                            </div>
-                            <div style="text-align:right;">
-                                <div style="font-size:10px; font-weight:700; color:#0F172A;">{med_time}</div>
-                                <span style="font-size:9px; font-weight:700; background:#DCFCE7; color:#16A34A; padding:2px 6px; border-radius:6px;">Đang dùng</span>
-                            </div>
-                        </div>
-                    """
-                st.markdown(f"""
-                    <div style="background:#FFFFFF; border:1px solid #E2ECF5; border-radius:14px; padding:10px 12px; margin-top:4px; box-shadow:0 2px 8px rgba(15,60,100,0.02);">
-                        {med_items_html}
-                    </div>
-                """, unsafe_allow_html=True)
+                    row = (
+                        f'<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #F1F5F9;">'
+                        f'<div style="display:flex; align-items:center; gap:8px;">'
+                        f'<span style="font-size:16px;">💊</span>'
+                        f'<div>'
+                        f'<div style="font-size:11.5px; font-weight:800; color:#0F172A;">{med_name}</div>'
+                        f'<div style="font-size:9.5px; color:#64748B;">{med_dos}</div>'
+                        f'</div>'
+                        f'</div>'
+                        f'<div style="text-align:right;">'
+                        f'<div style="font-size:10px; font-weight:700; color:#0F172A;">{med_time}</div>'
+                        f'<span style="font-size:9px; font-weight:700; background:#DCFCE7; color:#16A34A; padding:2px 6px; border-radius:6px;">Đang dùng</span>'
+                        f'</div>'
+                        f'</div>'
+                    )
+                    med_rows.append(row)
+
+                full_med_box = (
+                    f'<div style="background:#FFFFFF; border:1px solid #E2ECF5; border-radius:14px; padding:10px 12px; margin-top:4px; box-shadow:0 2px 8px rgba(15,60,100,0.02);">'
+                    f'{"".join(med_rows)}'
+                    f'</div>'
+                )
+                st.html(full_med_box)
 
 # ==============================================================================
 # PHÂN HỆ: TIN TỨC & KHUYẾN CÁO Y TẾ (TRỌN BỘ 12 BÀI BÁO - GIAO DIỆN GỌN GÀNG)
