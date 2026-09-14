@@ -601,13 +601,18 @@ CSS_STYLES = r"""
     .hero-banner-compact {
         position: relative !important;
         width: 100% !important;
-        height: 175px !important;
+        /* Dùng aspect-ratio để chiều cao tự co theo tỷ lệ ảnh gốc, không bị cắt */
+        aspect-ratio: 1000 / 270 !important;
+        height: auto !important;
+        min-height: 155px !important;
+        max-height: 200px !important;
         border-radius: 18px !important;
-        background-size: cover !important;
-        background-position: center right !important;
+        /* Co giãn vừa khít 100% cả chiều ngang lẫn chiều dọc */
+        background-size: 100% 100% !important;
+        background-position: center !important;
         background-repeat: no-repeat !important;
         box-shadow: 0 4px 18px rgba(2, 132, 199, 0.07) !important;
-        padding: 24px 28px !important;
+        padding: 22px 28px !important;
         box-sizing: border-box !important;
         overflow: hidden !important;
         margin-bottom: 12px !important;
@@ -660,6 +665,95 @@ CSS_STYLES = r"""
         overflow: hidden !important;
         text-overflow: ellipsis !important;
         margin: 0 !important;
+    }
+
+    .stApp { background:#F4F8FC; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; }
+    [data-testid="stAppViewContainer"] { background:#F4F8FC; }
+    .ticker-wrap {
+        width: 100%; overflow: hidden; background: linear-gradient(90deg, #0F3D64 0%, #1D5B8C 50%, #0F3D64 100%);
+        border-radius: 10px; padding: 9px 12px; margin-bottom: 16px; box-shadow: 0 3px 10px rgba(15, 61, 100, 0.15); border-left: 4px solid #F59E0B;
+    }
+    .ticker-text { font-size: 13.5px; font-weight: 600; color: #FFFFFF; letter-spacing: 0.3px; }
+    .ticker-highlight { color: #FDE047; font-weight: 700; }
+    .dashboard-card { background: #FFFFFF; border: 1px solid #E2ECF5; border-radius: 16px; padding: 18px 20px; box-shadow: 0 4px 16px rgba(20, 70, 110, 0.03); margin-bottom: 16px; }
+    .card-title { font-size: 15px; font-weight: 800; color: #12385C; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    /* Co nhỏ 3 thẻ thống kê và tạo khoảng đệm với hàng bên dưới */
+    .summary-card { 
+        background: #FFFFFF; 
+        border: 1px solid #E2ECF5; 
+        border-radius: 14px; 
+        padding: 9px 12px; 
+        display: flex; 
+        align-items: center; 
+        gap: 10px; 
+        box-shadow: 0 2px 8px rgba(20, 70, 110, 0.02); 
+        margin-bottom: 14px;
+    }
+    .summary-icon { 
+        width: 36px; 
+        height: 36px; 
+        border-radius: 10px; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        font-size: 17px; 
+        flex-shrink: 0;
+    }
+    .summary-label { 
+        font-size: 11px; 
+        color: #71889D; 
+        font-weight: 600; 
+        line-height: 1.1;
+    }
+    .summary-val { 
+        font-size: 15px; 
+        font-weight: 800; 
+        color: #0E355B; 
+        margin: 2px 0 1px 0; 
+        line-height: 1.2;
+    }
+    .summary-sub { 
+        font-size: 10px; 
+        color: #8CA0B2; 
+        line-height: 1.1;
+    }
+    .status-badge { background: #E8F8F0; color: #109655; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 20px; }
+    .slogan-footer { background: linear-gradient(135deg, #1E3A8A 0%, #0D9488 100%); color: #FFFFFF; text-align: center; padding: 20px; border-radius: 12px; font-size: 20px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 35px; box-shadow: 0 4px 12px rgba(30, 58, 138, 0.15); }
+
+    /* ==============================================================
+       DANH SÁCH TIN TỨC GỌN GÀNG (CLICK TRỰC TIẾP VÀO DÒNG TIN)
+       ============================================================== */
+    .news-list-clickable div[data-testid="stButton"] > button {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 2px 4px !important;
+        height: auto !important;
+        min-height: 44px !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        align-items: flex-start !important;
+        border-radius: 6px !important;
+        margin-bottom: 6px !important;
+        transition: background 0.15s ease !important;
+    }
+
+    .news-list-clickable div[data-testid="stButton"] > button:hover {
+        background: #F1F5F9 !important;
+    }
+
+    .news-list-clickable div[data-testid="stButton"] > button p {
+        font-size: 12px !important;
+        font-weight: 700 !important;
+        color: #0F172A !important;
+        line-height: 1.35 !important;
+        text-align: left !important;
+        white-space: normal !important;
+        margin: 0 !important;
+    }
+
+    .news-list-clickable div[data-testid="stButton"] > button:hover p {
+        color: #0284C7 !important;
     }
 
     .stApp { background:#F4F8FC; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; }
@@ -1389,10 +1483,15 @@ if st.session_state.main_navigation == "🏠 Tổng quan sức khỏe":
                     )
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # CỘT PHẢI: TIN TỨC Y TẾ
+        # CỘT PHẢI: TIN TỨC Y TẾ (CLICK TRỰC TIẾP VÀO BÀI ĐỂ ĐỌC)
         with col_news_box:
             with st.container(border=True):
-                col_n_head, col_n_more = st.columns([1.8, 1.0])
+                # Hàm chuyển thẳng vào bài viết cụ thể
+                def open_news_article(article_id):
+                    st.session_state.main_navigation = "📰 Tin tức & Khuyến cáo y tế"
+                    st.session_state.current_reading_article_id = article_id
+
+                col_n_head, col_n_more = st.columns([1.7, 1.1])
                 with col_n_head:
                     st.markdown("""
                         <div style="font-size: 15px; font-weight: 800; color: #0F172A; padding-top: 4px;">
@@ -1400,12 +1499,9 @@ if st.session_state.main_navigation == "🏠 Tổng quan sức khỏe":
                         </div>
                     """, unsafe_allow_html=True)
                 with col_n_more:
-                    if st.button("Xem tất cả ➔", key="btn_see_all_news_redesign", width="stretch"):
-                        st.session_state.main_navigation = "📰 Tin tức & Khuyến cáo y tế"
-                        st.session_state.current_reading_article_id = None
-                        st.rerun()
+                    st.button("Xem tất cả ➔", key="btn_see_all_news_redesign", on_click=switch_nav, args=("📰 Tin tức & Khuyến cáo y tế",), use_container_width=True)
 
-                st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
 
                 news_items = [
                     {
@@ -1428,25 +1524,24 @@ if st.session_state.main_navigation == "🏠 Tổng quan sức khỏe":
                     }
                 ]
 
+                # Render từng tin tức dưới dạng một hàng liền mạch có thể click
+                st.markdown('<div class="news-list-clickable">', unsafe_allow_html=True)
                 for item in news_items:
-                    c_thumb, c_txt, c_action = st.columns([0.45, 2.35, 0.6], gap="small")
+                    c_thumb, c_btn = st.columns([0.22, 0.78], gap="small")
                     with c_thumb:
                         st.markdown(f"""
-                            <img src="{item['img']}" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover; display: block;" />
+                            <img src="{item['img']}" style="width: 44px; height: 44px; border-radius: 8px; object-fit: cover; display: block; margin-top: 2px;" />
                         """, unsafe_allow_html=True)
-                    with c_txt:
-                        st.markdown(f"""
-                            <div style="font-size: 12px; font-weight: 700; color: #0F172A; line-height: 1.25; margin-bottom: 2px;">
-                                {item['title']}
-                            </div>
-                            <div style="font-size: 10px; color: #94A3B8;">{item['date']}</div>
-                        """, unsafe_allow_html=True)
-                    with c_action:
-                        if st.button("Đọc ➔", key=f"btn_read_quick_{item['id']}", width="stretch"):
-                            st.session_state.main_navigation = "📰 Tin tức & Khuyến cáo y tế"
-                            st.session_state.current_reading_article_id = item["id"]
-                            st.rerun()
-                    st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #F1F5F9;'>", unsafe_allow_html=True)
+                    with c_btn:
+                        btn_label = f"**{item['title']}**\n\n🕒 {item['date']}"
+                        st.button(
+                            btn_label,
+                            key=f"btn_news_card_{item['id']}",
+                            on_click=open_news_article,
+                            args=(item["id"],),
+                            use_container_width=True
+                        )
+                st.markdown('</div>', unsafe_allow_html=True)
 
     # ============================================================
     # CỘT PHỤ (BÊN PHẢI NGANG HÀNG VỚI COL_MAIN)
