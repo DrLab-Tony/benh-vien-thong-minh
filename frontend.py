@@ -455,10 +455,22 @@ def get_system_notifications(user_role: str, user_id: int):
 
 CSS_STYLES = r"""
 <style>
+    /* Giữ header mặc định để nút mở sidebar hoạt động chuẩn xác */
     header[data-testid="stHeader"] {
-        display: none !important;
-        height: 0px !important;
+        background: transparent !important;
+        visibility: visible !important;
+        display: block !important;
     }
+
+    /* Chỉ ẩn menu 3 chấm, nút Manage app và Footer */
+    #MainMenu, 
+    footer,
+    div[data-testid="stStatusWidget"],
+    .stDeployButton {
+        visibility: hidden !important;
+        display: none !important;
+    }
+
     .block-container {
         padding-top: 1rem !important;
         padding-bottom: 0.8rem !important;
@@ -468,7 +480,7 @@ CSS_STYLES = r"""
     }
 
     /* ==============================================================
-       CHUẨN HÓA KÍCH THƯỚC VÀ CĂN THẲNG HÀNG DANH MỤC SIDEBAR
+       SIDEBAR: TỰ NHIÊN, KHÔNG KHÓA CỨNG WIDTH, ĐÓNG/MỞ TRƠN TRU
        ============================================================== */
     .sidebar-menu-title {
         display: block !important;
@@ -482,9 +494,6 @@ CSS_STYLES = r"""
     }
     
     [data-testid="stSidebar"] { 
-        min-width: 260px !important;
-        max-width: 260px !important;
-        width: 260px !important;
         background: linear-gradient(180deg, #07233E 0%, #0A3258 60%, #061B2F 100%) !important; 
         border-right: 0 !important; 
     }
@@ -547,6 +556,7 @@ CSS_STYLES = r"""
         color: #FFFFFF !important;
         font-weight: 700 !important;
     }
+
     .sidebar-custom-divider {
         border-top: 1px solid rgba(255, 255, 255, 0.12);
         margin: 18px 4px 14px 4px;
@@ -628,11 +638,20 @@ CSS_STYLES = r"""
     .stApp { background:#F4F8FC; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; }
     [data-testid="stAppViewContainer"] { background:#F4F8FC; }
     .ticker-wrap {
-        width: 100%; overflow: hidden; background: linear-gradient(90deg, #0F3D64 0%, #1D5B8C 50%, #0F3D64 100%);
-        border-radius: 10px; padding: 9px 12px; margin-bottom: 16px; box-shadow: 0 3px 10px rgba(15, 61, 100, 0.15); border-left: 4px solid #F59E0B;
+        width: 100%; 
+        overflow: hidden; 
+        background: linear-gradient(90deg, #0F3D64 0%, #1D5B8C 50%, #0F3D64 100%);
+        border-radius: 10px; 
+        padding: 9px 12px; 
+        margin-bottom: 16px; 
+        box-shadow: 0 3px 10px rgba(15, 61, 100, 0.15); 
+        border-left: 4px solid #F59E0B;
+        position: relative;
+        z-index: 1;
     }
     .ticker-text { font-size: 13.5px; font-weight: 600; color: #FFFFFF; letter-spacing: 0.3px; }
     .ticker-highlight { color: #FDE047; font-weight: 700; }
+    
     .dashboard-card { background: #FFFFFF; border: 1px solid #E2ECF5; border-radius: 16px; padding: 18px 20px; box-shadow: 0 4px 16px rgba(20, 70, 110, 0.03); margin-bottom: 16px; }
     .card-title { font-size: 15px; font-weight: 800; color: #12385C; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
     
@@ -664,7 +683,7 @@ CSS_STYLES = r"""
     .slogan-footer { background: linear-gradient(135deg, #1E3A8A 0%, #0D9488 100%); color: #FFFFFF; text-align: center; padding: 20px; border-radius: 12px; font-size: 20px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 35px; box-shadow: 0 4px 12px rgba(30, 58, 138, 0.15); }
 
     /* ==============================================================
-       1. KHỐI DỊCH VỤ Y TẾ NHANH (NÚT BẤM GỌN GÀNG, SÁT NHAU)
+       KHỐI DỊCH VỤ Y TẾ NHANH
        ============================================================== */
     .tight-service-box div[data-testid="stButton"] > button {
         background: #FFFFFF !important;
@@ -691,7 +710,7 @@ CSS_STYLES = r"""
     }
 
     /* ==============================================================
-       DANH SÁCH TIN TỨC GỌN GÀNG: ẢNH NHỎ 42PX, CHỮ TRẢI ĐẦY, KHÔNG VIỀN
+       DANH SÁCH TIN TỨC GỌN GÀNG (ẢNH 42PX, CHỮ BÁM SÁT)
        ============================================================== */
     .news-list-flex-container {
         display: flex;
@@ -716,7 +735,6 @@ CSS_STYLES = r"""
         background-color: #F1F5F9 !important;
     }
 
-    /* Ép ảnh thumbnail nhỏ gọn đúng 42px x 42px */
     .news-item-thumb {
         width: 42px !important;
         height: 42px !important;
@@ -728,7 +746,6 @@ CSS_STYLES = r"""
         display: block !important;
     }
 
-    /* Khối chữ sát ảnh, trải đều hết sang phải */
     .news-item-content {
         display: flex !important;
         flex-direction: column !important;
@@ -769,6 +786,38 @@ CSS_STYLES = r"""
 </style>
 """
 st.markdown(CSS_STYLES, unsafe_allow_html=True)
+
+# Tự động gỡ bỏ cờ ghi nhớ trạng thái đóng Sidebar trong trình duyệt
+st.components.v1.html("""
+<script>
+    try {
+        window.parent.localStorage.removeItem('stSidebar.isCollapsed');
+        const btn = window.parent.document.querySelector('[data-testid="stSidebarCollapsedControl"] button') 
+                 || window.parent.document.querySelector('[data-testid="collapsedControl"] button')
+                 || window.parent.document.querySelector('header button');
+        if (btn) {
+            btn.click();
+        }
+    } catch (e) {}
+</script>
+""", height=0, width=0)
+
+# Ép Sidebar tự động mở ra và tạo nút dự phòng nếu bị ẩn
+st.html("""
+<script>
+    function forceExpandSidebar() {
+        // Tìm và tự động kích hoạt nút mở sidebar nếu đang bị ẩn
+        const collapsedBtn = window.parent.document.querySelector('[data-testid="stSidebarCollapsedControl"] button') 
+                          || window.parent.document.querySelector('[data-testid="collapsedControl"] button');
+        if (collapsedBtn) {
+            collapsedBtn.click();
+        }
+        // Xóa cờ trạng thái thu gọn bị lưu cứng trong trình duyệt
+        window.parent.localStorage.removeItem('stSidebar.isCollapsed');
+    }
+    setTimeout(forceExpandSidebar, 200);
+</script>
+""")
 
 # ==============================================================================
 # 1. KHỞI TẠO ĐẦY ĐỦ BỘ NHỚ TRẠNG THÁI (BẮT BUỘC KHỞI TẠO AUTH_USER ĐẦU TIÊN)
