@@ -783,6 +783,43 @@ CSS_STYLES = r"""
         border-bottom: 1px solid #F1F5F9;
         margin: 2px 4px 4px 4px;
     }
+    /* ==============================================================
+       LÀM SÁNG NỔI BẬT NÚT THU NHỎ SIDEBAR (<<) TRÊN NỀN TỐI
+       ============================================================== */
+    /* 1. Đổi màu nền nút và tạo khung bo góc nhẹ */
+    [data-testid="stSidebarCollapseButton"] button,
+    [data-testid="stSidebar"] button[kind="header"],
+    button[aria-label="Close sidebar"] {
+        background: rgba(255, 255, 255, 0.15) !important;
+        border-radius: 8px !important;
+        color: #38BDF8 !important;
+    }
+
+    [data-testid="stSidebarCollapseButton"] button:hover,
+    [data-testid="stSidebar"] button[kind="header"]:hover,
+    button[aria-label="Close sidebar"]:hover {
+        background: #0284C7 !important;
+        color: #FFFFFF !important;
+    }
+
+    /* 2. Ép trực tiếp SVG mũi tên chuyển sang màu xanh sáng / trắng */
+    [data-testid="stSidebarCollapseButton"] svg,
+    [data-testid="stSidebar"] button[kind="header"] svg,
+    button[aria-label="Close sidebar"] svg {
+        fill: #38BDF8 !important;
+        stroke: #38BDF8 !important;
+        color: #38BDF8 !important;
+        filter: drop-shadow(0 0 2px rgba(56, 189, 248, 0.6)) brightness(1.8) !important;
+    }
+
+    [data-testid="stSidebarCollapseButton"] button:hover svg,
+    [data-testid="stSidebar"] button[kind="header"]:hover svg,
+    button[aria-label="Close sidebar"]:hover svg {
+        fill: #FFFFFF !important;
+        stroke: #FFFFFF !important;
+        color: #FFFFFF !important;
+        filter: none !important;
+    }
 </style>
 """
 st.markdown(CSS_STYLES, unsafe_allow_html=True)
