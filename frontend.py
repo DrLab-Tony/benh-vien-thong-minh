@@ -1507,7 +1507,7 @@ if st.session_state.main_navigation == "🏠 Tổng quan sức khỏe":
                 f_email = st.text_input("Địa chỉ Email:", value=current_prof.get("email", ""))
                 f_bio = st.text_area("🌱 Sở thích:", value=current_prof.get("bio", "Yêu thích thể thao, đọc sách y khoa"), height=70)
                 f_av_file = st.file_uploader("Thay ảnh đại diện:", type=["png", "jpg", "jpeg"], key="pop_av_file")
-                btn_save_folder_profile = st.form_submit_button("💾 Lưu thay đổi lên Render", type="primary", width="stretch")
+                btn_save_folder_profile = st.form_submit_button("💾 Lưu thay đổi", type="primary", width="stretch")
 
             if btn_save_folder_profile:
                 new_av_b64 = current_prof.get("avatar")
