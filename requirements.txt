@@ -4,7 +4,10 @@ requests>=2.31.0
 sqlalchemy==2.0.31
 aiosqlite
 asyncpg==0.30.0
+streamlit
 psycopg2-binary
+pandas
+plotly
 alembic==1.13.1
 pydantic-settings==2.3.4
 python-dotenv
