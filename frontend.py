@@ -824,8 +824,8 @@ CSS_STYLES = r"""
 """
 st.markdown(CSS_STYLES, unsafe_allow_html=True)
 
-# Tự động gỡ bỏ cờ ghi nhớ trạng thái đóng Sidebar trong trình duyệt
-st.components.v1.html("""
+# Tự động mở Sidebar chuẩn Streamlit mới (không dùng st.components.v1.html)
+st.html("""
 <script>
     try {
         window.parent.localStorage.removeItem('stSidebar.isCollapsed');
@@ -836,23 +836,6 @@ st.components.v1.html("""
             btn.click();
         }
     } catch (e) {}
-</script>
-""", height=0, width=0)
-
-# Ép Sidebar tự động mở ra và tạo nút dự phòng nếu bị ẩn
-st.html("""
-<script>
-    function forceExpandSidebar() {
-        // Tìm và tự động kích hoạt nút mở sidebar nếu đang bị ẩn
-        const collapsedBtn = window.parent.document.querySelector('[data-testid="stSidebarCollapsedControl"] button') 
-                          || window.parent.document.querySelector('[data-testid="collapsedControl"] button');
-        if (collapsedBtn) {
-            collapsedBtn.click();
-        }
-        // Xóa cờ trạng thái thu gọn bị lưu cứng trong trình duyệt
-        window.parent.localStorage.removeItem('stSidebar.isCollapsed');
-    }
-    setTimeout(forceExpandSidebar, 200);
 </script>
 """)
 
@@ -3305,51 +3288,163 @@ YÊU CẦU: Trả lời ngắn gọn, chuẩn y khoa theo Bộ Y Tế, rõ ràng
 
 
 # ==============================================================================
-# PHÂN HỆ 2: KHÁM SỨC KHỎE & ĐẶC QUYỀN VIP
+# PHÂN HỆ 2: KHÁM SỨC KHỎE & ĐẶC QUYỀN VIP (ĐÃ KHÔI PHỤC RÀO CẢN VIP & GIẢM GIÁ)
 # ==============================================================================
 elif st.session_state.main_navigation == "🩺 Khám Sức Khỏe & Đặc Quyền VIP":
     st.markdown("<div style='font-size:20px; font-weight:800; color:#0C3861; margin-bottom:4px;'>🩺 TRUNG TÂM KHÁM SỨC KHỎE & ĐẶC QUYỀN VIP</div>", unsafe_allow_html=True)
     st.markdown("<div style='font-size:12px; color:#64748B; margin-bottom:14px;'>👨‍⚕️ Cố vấn chuyên môn: DR. Nguyễn Tiến Toàn | ✉️ Email: toanbvtimhn@gmail.com</div>", unsafe_allow_html=True)
 
-    c_vip1, c_vip2 = st.columns([1.2, 1])
-    with c_vip1:
-        st.markdown("#### 📅 Đặt Lịch Hẹn Gặp Bác Sĩ Tư Vấn Trực Tiếp")
-        with st.form("form_book_doc_render"):
-            app_date = st.date_input("Chọn ngày hẹn khám:", min_value=datetime.date.today())
-            app_time = st.selectbox("Khung giờ:", ["08:30 - 09:30 (Sáng)", "14:30 - 15:30 (Chiều)", "19:30 - 20:30 (Tối Online)"])
-            app_type = st.radio("Hình thức:", ["Gặp trực tiếp tại Phòng khám", "Tư vấn Online qua Video Call"], horizontal=True)
-            app_notes = st.text_area("Mô tả vấn đề cần tư vấn:")
-            btn_book = st.form_submit_button("Gửi Lịch Hẹn Bác Sĩ (Lưu Render)", type="primary")
+    target_uid = st.session_state.get("active_user_id") or (st.session_state.auth_user.get("user_id") if st.session_state.auth_user else 1)
+    current_user_prof = st.session_state.profiles_dict.get(target_uid, {})
+    is_user_unlocked = current_user_prof.get("is_vip", False) or IS_ANY_ADMIN
 
-        if btn_book and app_notes.strip():
-            with db_cursor() as cur_ap:
-                cur_ap.execute("""
-                    INSERT INTO doctor_appointments (user_id, patient_name, patient_phone, date, time, type, notes)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (USER_ID, current_prof['full_name'], current_prof.get('phone', ''), str(app_date), app_time, app_type, app_notes.strip()))
-            get_system_notifications.clear()
-            st.success("🎉 Đã lưu lịch hẹn lên Render thành công! Bác sĩ sẽ liên hệ sớm.")
+    # 1. NẾU CHƯA CÓ VIP: HIỂN THỊ KHÓA & FORM NHẬP MÃ
+    if not is_user_unlocked:
+        st.markdown(
+            """
+            <div style="background-color:#FEF3C7; border:2px dashed #F59E0B; border-radius:12px; padding:24px; text-align:center; margin-top:14px;">
+                <h3 style="color:#B45309; margin-top:0;">🔒 PHÂN HỆ DÀNH RIÊNG CHO KHÁCH HÀNG VIP</h3>
+                <p style="color:#78350F; font-size:14px; line-height:1.6;">
+                    Mục <b>Khám Sức Khỏe VIP</b> chỉ dành cho khách hàng đã <b>mua Thực phẩm chức năng</b> (được tặng kèm mã Code VIP kích hoạt) 
+                    hoặc được <b>DR. Nguyễn Tiến Toàn / Quản trị viên</b> mở khóa trực tiếp.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        col_c1, col_c2, col_c3 = st.columns([1, 1.8, 1])
+        with col_c2:
+            with st.form("form_unlock_vip_safe"):
+                st.subheader("🔑 Nhập Mã Code Kích Hoạt")
+                vip_input_code = st.text_input("Nhập mã Code (VD: VIP-XXXXXX):", placeholder="Mã code được cấp sau khi mua TPCN")
+                btn_unlock = st.form_submit_button("🔓 Kích Hoạt Đặc Quyền VIP Ngay", type="primary", width="stretch")
 
-    with c_vip2:
-        st.markdown("#### 🧪 Đăng Ký Gói Xét Nghiệm MEDLATEC Tận Nhà")
-        with st.form("form_medlatec_reg_render"):
-            pkg_choice = st.selectbox("Chọn gói tầm soát:", [
-                "Gói 1: Tầm soát ung thư đường tiêu hóa (1.350.000 đ)",
-                "Gói 2: Chức năng Gan - Thận - Mỡ máu (765.000 đ)",
-                "Gói 3: Tầm soát đột quỵ & Tim mạch (1.620.000 đ)"
-            ])
-            sample_addr = st.text_input("Địa chỉ lấy mẫu tận nơi:", value="Theo địa chỉ hồ sơ")
-            btn_med_reg = st.form_submit_button("🎁 Xác Nhận Đăng Ký (Lưu Render)", type="primary")
+                if btn_unlock:
+                    code_val = vip_input_code.strip().upper()
+                    if code_val.startswith("VIP-") or code_val == "VIP":
+                        try:
+                            with db_cursor() as cur_v:
+                                cur_v.execute("UPDATE app_users SET is_vip = 1 WHERE user_id = %s", (target_uid,))
+                            
+                            st.cache_data.clear()
+                            st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
+                            st.success("🎉 **Kích hoạt thành công Đặc Quyền VIP!**")
+                            st.rerun()
+                        except Exception as ex_vip:
+                            st.error(f"Lỗi cập nhật CSDL: {ex_vip}")
+                    else:
+                        st.error("❌ Mã Code không hợp lệ. Vui lòng kiểm tra lại đơn hàng hoặc liên hệ Bác sĩ.")
 
-        if btn_med_reg:
-            with db_cursor() as cur_mr:
-                cur_mr.execute("""
-                    INSERT INTO medlatec_registrations (user_id, patient_name, patient_phone, package, address)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (USER_ID, current_prof['full_name'], current_prof.get('phone', ''), pkg_choice, sample_addr))
-            st.success("🎉 Đã tiếp nhận đăng ký xét nghiệm tận nhà lên Render!")
+    # 2. NẾU ĐÃ MỞ KHÓA VIP: HIỂN THỊ NỘI DUNG
+    else:
+        st.markdown(
+            """
+            <div style="background:linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%); border-left:6px solid #10B981; padding:14px; border-radius:8px; margin-bottom:18px;">
+                <h4 style="color:#065F46; margin:0;">⭐ TÀI KHOẢN ĐÃ ĐƯỢC MỞ KHÓA ĐẶC QUYỀN VIP</h4>
+                <p style="color:#047857; margin:4px 0 0 0; font-size:13px;">Bạn đang được hưởng toàn bộ ưu đãi giảm 10% xét nghiệm MEDLATEC và đặt lịch hẹn khám cùng DR. Nguyễn Tiến Toàn.</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
+        tab_vip_doc, tab_vip_med, tab_vip_direct = st.tabs([
+            "📅 1. Hẹn Gặp Bác Sĩ Trực Tiếp",
+            "🧪 2. Đăng Ký Xét Nghiệm MEDLATEC (Ưu Đãi VIP)",
+            "👨‍⚕️ 3. Hotline & Kênh Tư Vấn Bác Sĩ",
+        ])
 
+        with tab_vip_doc:
+            st.subheader("📅 Đặt Lịch Hẹn Gặp Bác Sĩ Tư Vấn Trực Tiếp")
+            with st.form("form_book_doc_safe"):
+                c_d1, c_d2 = st.columns(2)
+                with c_d1:
+                    app_date = st.date_input("Chọn ngày hẹn khám:", min_value=datetime.date.today())
+                with c_d2:
+                    app_time = st.selectbox("Khung giờ tư vấn:", [
+                        "08:30 - 09:30 (Sáng)", "10:00 - 11:00 (Sáng)",
+                        "14:30 - 15:30 (Chiều)", "16:00 - 17:00 (Chiều)",
+                        "19:30 - 20:30 (Tối Online)"
+                    ])
+                app_type = st.radio("Hình thức tư vấn:", ["Gặp trực tiếp tại Phòng khám / Bệnh viện", "Tư vấn Online qua Video Call (Zalo / Meet)"], horizontal=True)
+                app_notes = st.text_area("Mô tả vấn đề sức khỏe cần Bác sĩ tư vấn:", placeholder="Ví dụ: Đau tức ngực, muốn đọc kết quả xét nghiệm...")
+                btn_book = st.form_submit_button("✅ Gửi Lịch Hẹn Bác Sĩ", type="primary")
+
+            if btn_book and app_notes.strip():
+                try:
+                    with db_cursor() as cur_ap:
+                        cur_ap.execute("""
+                            INSERT INTO doctor_appointments (user_id, patient_name, patient_phone, date, time, type, notes)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """, (target_uid, current_user_prof.get('full_name', ''), current_user_prof.get('phone', ''), str(app_date), app_time, app_type, app_notes.strip()))
+                    st.cache_data.clear()
+                    st.success("🎉 **Đã gửi lịch hẹn thành công!** Trợ lý Bác sĩ sẽ liên hệ sớm.")
+                except Exception as ex_b:
+                    st.error(f"Lỗi lưu lịch hẹn: {ex_b}")
+
+        with tab_vip_med:
+            st.subheader("🧪 Gói Tầm Soát MEDLATEC (Giảm 10% Cho Hội Viên VIP)")
+            
+            med_packages = [
+                {"name": "Gói 1: Tầm soát ung thư Tiêu hóa (Gan, Dạ dày, Đại tràng, Tụy)", "orig": 1500000, "disc": 10, "tests": "Tổng phân tích máu, Men gan AST/ALT, Ure/Creatinin, Dấu ấn CEA, AFP, CA 19-9, Siêu âm bụng"},
+                {"name": "Gói 2: Kiểm tra chức năng Gan - Thận - Mỡ máu - Đường huyết toàn diện", "orig": 850000, "disc": 10, "tests": "Tổng phân tích máu, AST/ALT/GGT, Ure/Creatinin, Mỡ máu 4 chỉ số, Đường huyết đói, Axit Uric"},
+                {"name": "Gói 3: Tầm soát đột quỵ & Dấu ấn tim mạch chuyên sâu", "orig": 1800000, "disc": 10, "tests": "Bộ mỡ máu toàn phần, Đường huyết & HbA1c, Chức năng thận, Điện giải đồ, X-quang tim phổi, Dấu ấn Troponin T"},
+                {"name": "Gói 4: Xét nghiệm tổng quát sức khỏe tại nhà định kỳ", "orig": 1200000, "disc": 10, "tests": "Tổng phân tích máu, Men gan, Thận, Mỡ máu, Đường huyết, Nước tiểu 10 thông số"}
+            ]
+
+            pkg_map = {}
+            for p in med_packages:
+                final_pr = int(p["orig"] * (1 - p["disc"] / 100))
+                lbl = f"{p['name']} — Giá VIP: {final_pr:,} đ (Gốc: {p['orig']:,} đ)"
+                pkg_map[lbl] = {**p, "final": final_pr}
+
+            with st.form("form_medlatec_reg_vip_safe"):
+                chosen_pkg_lbl = st.selectbox("Chọn gói xét nghiệm MEDLATEC:", list(pkg_map.keys()))
+                sel_data = pkg_map[chosen_pkg_lbl]
+                
+                st.markdown(f"📋 **Xét nghiệm bao gồm:** *{sel_data['tests']}*")
+                st.markdown(f"💰 **Giá ưu đãi VIP:** <span style='color:#DC2626; font-size:18px; font-weight:bold;'>{sel_data['final']:,} đ</span> *(Tiết kiệm: {sel_data['orig'] - sel_data['final']:,} đ)*", unsafe_allow_html=True)
+
+                c_m1, c_m2 = st.columns(2)
+                with c_m1:
+                    sample_date = st.date_input("Ngày mong muốn lấy mẫu:", min_value=datetime.date.today())
+                with c_m2:
+                    loc_type = st.selectbox("Địa điểm:", ["Nhân viên MEDLATEC đến lấy mẫu tận nhà", "Đến trực tiếp phòng khám MEDLATEC"])
+
+                sample_addr = st.text_input("Địa chỉ lấy mẫu (nếu lấy tại nhà):", placeholder="Số nhà, đường phố, quận/huyện...")
+                btn_med_reg = st.form_submit_button("🎁 Đăng Ký Gói Xét Nghiệm VIP", type="primary")
+
+            if btn_med_reg:
+                try:
+                    with db_cursor() as cur_mr:
+                        cur_mr.execute("""
+                            INSERT INTO medlatec_registrations (user_id, patient_name, patient_phone, package, final_price, sample_date, location_type, address)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (target_uid, current_user_prof.get('full_name', ''), current_user_prof.get('phone', ''), sel_data['name'], sel_data['final'], str(sample_date), loc_type, sample_addr))
+                    st.success("🎉 **Đăng ký thành công!** Đơn vị MEDLATEC và Bác sĩ đã nhận được yêu cầu.")
+                except Exception as ex_m:
+                    st.error(f"Lỗi lưu đăng ký: {ex_m}")
+
+        with tab_vip_direct:
+            st.subheader("👨‍⚕️ Kênh Liên Hệ Trực Tiếp Bác Sĩ Chuyên Khoa")
+            st.markdown(
+                """
+                <div style="background-color:#F8FAFC; border:1px solid #E2E8F0; padding:18px; border-radius:10px; margin-top:10px;">
+                    <h4 style="color:#1E3A8A; margin-top:0;">👨‍⚕️ DR. Nguyễn Tiến Toàn - Phụ Trách Chuyên Môn</h4>
+                    <p style="font-size:14px; color:#334155; margin-bottom:8px;">
+                        📞 <b>Hotline Tư Vấn VIP:</b> <a href="tel:0973173759" style="font-size:16px; font-weight:bold; color:#DC2626;">0973.173.759</a>
+                    </p>
+                    <p style="font-size:14px; color:#334155; margin-bottom:8px;">
+                        💬 <b>Zalo Hỗ Trợ Bệnh Án 24/7:</b> <b>0973.173.759</b>
+                    </p>
+                    <p style="font-size:14px; color:#334155; margin-bottom:0;">
+                        ✉️ <b>Hộp thư Y khoa:</b> <a href="mailto:toanbvtimhn@gmail.com">toanbvtimhn@gmail.com</a>
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 # ==============================================================================
 # PHÂN HỆ 3: CẤP CỨU 115 & HƯỚNG DẪN SƠ CỨU TẠI CHỖ
 # ==============================================================================
@@ -3574,6 +3669,12 @@ elif st.session_state.main_navigation == "🌿 TPCN phòng ngừa ung thư":
                             💰 Số tiền: <b style="color:#DC2626;">{last_ord['total']:,} VNĐ</b><br>
                             🏷️ Mã nội dung CK (Code): <span style="background:#FEF08A; padding:2px 8px; border-radius:4px; font-weight:800; color:#854D0E; font-family:monospace;">{last_ord['code']}</span>
                         </div>
+                        <hr style="margin:8px 0; border:0.5px dashed #86EFAC;">
+                        <div style="font-size:13px; color:#065F46;">
+                            🎁 <b>Mã kích hoạt Đặc Quyền VIP của bạn:</b> 
+                            <span style="font-size:15px; font-weight:900; color:#DC2626; background:#FEF2F2; padding:2px 8px; border-radius:4px; border:1px dashed #EF4444;">{last_ord.get('vip_code', 'VIP-MEMBER')}</span><br>
+                            <small style="color:#047857;">👉 <i>Hãy vào mục <b>"🩺 Khám Sức Khỏe & Đặc Quyền VIP"</b> và nhập mã này để mở khóa lịch hẹn Bác sĩ và nhận ưu đãi giảm 10% xét nghiệm.</i></small>
+                        </div>
                     </div>
                 """, unsafe_allow_html=True)
 
@@ -3613,7 +3714,9 @@ elif st.session_state.main_navigation == "🌿 TPCN phòng ngừa ung thư":
             deliv_addr = st.text_input("Địa chỉ giao hàng tận nơi:", value="Giao về địa chỉ theo hồ sơ")
 
             if st.button("🚀 Xác Nhận Đặt Mua & Lấy Mã Thanh Toán", type="primary", width="stretch"):
-                formatted_items = f"[{order_code}] " + "; ".join(items_summary)
+                # Tự động sinh mã VIP tặng kèm khách hàng
+                gift_vip_code = f"VIP-{random.randint(100000, 999999)}"
+                formatted_items = f"[{order_code}] [Mã VIP: {gift_vip_code}] " + "; ".join(items_summary)
                 order_id = None
                 with db_cursor() as cur_ord:
                     cur_ord.execute("""
@@ -3627,6 +3730,7 @@ elif st.session_state.main_navigation == "🌿 TPCN phòng ngừa ung thư":
                 st.session_state.last_order_info = {
                     "order_id": order_id,
                     "code": order_code,
+                    "vip_code": gift_vip_code,
                     "total": total_payment,
                     "items": formatted_items
                 }
