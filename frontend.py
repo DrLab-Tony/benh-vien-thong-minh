@@ -101,11 +101,39 @@ def init_all_render_tables():
                 gender VARCHAR(20) DEFAULT 'Nam',
                 avatar TEXT,
                 is_vip INTEGER DEFAULT 0,
-                bio TEXT DEFAULT 'Yêu thích thể thao, đọc sách y khoa',
+                bio TEXT DEFAULT 'Yêu thích thể thao, đọc sách y khoa...',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        
+        # THÊM LỆNH NÀY NGAY BÊN DƯỚI ĐỂ ÉP RENDER BỔ SUNG CỘT ADDRESS:
+        cur.execute("""
+            ALTER TABLE app_users ADD COLUMN IF NOT EXISTS address TEXT DEFAULT 'Chưa cập nhật';
+        """)
 
+        # Dùng đoạn DO $$ an toàn này để thêm constraint email UNIQUE (nếu chưa có) mà không sợ báo lỗi trùng lặp
+        cur.execute("""
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'unique_app_users_email'
+                ) THEN 
+                    ALTER TABLE app_users ADD CONSTRAINT unique_app_users_email UNIQUE (email);
+                END IF; 
+            END $$;
+        """)
+
+        cur.execute("""
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'unique_app_users_email'
+                ) THEN 
+                    ALTER TABLE app_users ADD CONSTRAINT unique_app_users_email UNIQUE (email);
+                END IF; 
+            END $$;
+        """)
+        
         cur.execute("""
             CREATE TABLE IF NOT EXISTS medlatec_registrations (
                 id SERIAL PRIMARY KEY,
@@ -262,6 +290,30 @@ def init_all_render_tables():
 
 @st.cache_resource
 def _run_migrations_once():
+    # --- ĐOẠN CODE TỰ ĐỘNG GỠ LỖI TRÙNG EMAIL TRƯỚC KHI TẠO RÀNG BUỘC ---
+    try:
+        with db_cursor() as cur_fix:
+            # Tự động tìm các email bị trùng, giữ lại tài khoản có ID nhỏ nhất, 
+            # các tài khoản trùng còn lại sẽ được đổi thành 'dupe_[user_id]_[email]' để hết lỗi UniqueViolation
+            cur_fix.execute("""
+                UPDATE app_users 
+                SET email = 'dupe_' || user_id || '_' || email 
+                WHERE email IN (
+                    SELECT email FROM app_users 
+                    WHERE email IS NOT NULL AND email != '' 
+                    GROUP BY email HAVING COUNT(*) > 1
+                ) 
+                AND user_id NOT IN (
+                    SELECT MIN(user_id) FROM app_users 
+                    WHERE email IS NOT NULL AND email != '' 
+                    GROUP BY email HAVING COUNT(*) > 1
+                );
+            """)
+            print("Đã tự động xử lý xong các email bị trùng lặp!")
+    except Exception as e:
+        print(f"Lỗi tự động fix email: {e}")
+    # --------------------------------------------------------------------
+
     init_all_render_tables()
     return True
 
@@ -309,6 +361,17 @@ def get_cached_supplements():
     except Exception:
         return []
 
+
+# ĐẶT HÀM NORMALIZE_EMAIL NGAY TẠI ĐÂY:
+def normalize_email(email_str: str) -> str:
+    """Chuẩn hóa Gmail: xóa dấu chấm và phần alias sau dấu + để tránh lách luật 1 mail tạo nhiều nick."""
+    email_clean = email_str.strip().lower()
+    if "@gmail.com" in email_clean:
+        name_part, domain_part = email_clean.split("@", 1)
+        name_part = name_part.split("+")[0]  # Bỏ phần +alias (vd: user+123@gmail.com -> user)
+        name_part = name_part.replace(".", "")  # Bỏ dấu chấm (vd: u.s.e.r@gmail.com -> user)
+        return f"{name_part}@{domain_part}"
+    return email_clean
 
 def send_otp_email(recipient_email: str, otp_code: str, action_name: str = "Xác thực tài khoản"):
     """Gửi mã OTP bảo mật."""
@@ -377,7 +440,7 @@ def get_cached_users_from_render():
     profiles_dict = {}
     try:
         with db_cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            cur.execute("SELECT user_id, username, password, full_name, role, phone, email, age, gender, avatar, is_vip, bio FROM app_users")
+            cur.execute("SELECT user_id, username, password, full_name, role, phone, email, age, gender, avatar, is_vip, bio , COALESCE(address, 'Chưa cập nhật') AS address FROM app_users")
             rows = cur.fetchall()
 
             for r in rows:
@@ -386,7 +449,8 @@ def get_cached_users_from_render():
                 u_data = {
                     "user_id": u_id, "username": u_name, "password": r["password"],
                     "full_name": r["full_name"], "role": r["role"], "phone": r["phone"] or "",
-                    "email": r["email"] or "", "is_vip": bool(r["is_vip"]), "bio": r["bio"] or ""
+                    "email": r["email"] or "", "is_vip": bool(r["is_vip"]), "bio": r["bio"] or "",
+                    "address": r["address"] or "Chưa cập nhật"
                 }
                 users_dict[u_name] = u_data
                 if r["phone"]:
@@ -395,7 +459,8 @@ def get_cached_users_from_render():
                 profiles_dict[u_id] = {
                     "full_name": r["full_name"], "age": r["age"] or 30, "gender": r["gender"] or "Nam",
                     "phone": r["phone"] or "", "email": r["email"] or "", "username": u_name,
-                    "avatar": r["avatar"], "is_vip": bool(r["is_vip"]), "bio": r["bio"] or "Yêu thích thể thao, đọc sách y khoa"
+                    "avatar": r["avatar"], "is_vip": bool(r["is_vip"]), "bio": r["bio"] or "Yêu thích thể thao, đọc sách y khoa...",
+                    "address": r["address"] or "Chưa cập nhật"
                 }
     except Exception as e:
         print(f"Lỗi đọc DB Render: {e}")
@@ -820,6 +885,13 @@ CSS_STYLES = r"""
         color: #FFFFFF !important;
         filter: none !important;
     }
+    /* Tối ưu hóa ô nhập liệu trên điện thoại để nhận phím cách và bàn phím ảo bình thường */
+    input[type="text"], textarea {
+        -webkit-user-select: text !important;
+        user-select: text !important;
+        touch-action: manipulation !important;
+        -webkit-appearance: none !important;
+    }
 </style>
 """
 st.markdown(CSS_STYLES, unsafe_allow_html=True)
@@ -899,116 +971,317 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# ==============================================================================
+# QUẢN LÝ TRẠNG THÁI XÁC THỰC: LOGIN / REGISTER / FORGOT_PASSWORD
+# ==============================================================================
+if "auth_screen_mode" not in st.session_state:
+    st.session_state.auth_screen_mode = "login"  # Các chế độ: "login", "register", "forgot"
+
+if "forgot_otp_step" not in st.session_state:
+    st.session_state.forgot_otp_step = False
+if "forgot_user_data" not in st.session_state:
+    st.session_state.forgot_user_data = {}
+if "forgot_otp_code" not in st.session_state:
+    st.session_state.forgot_otp_code = None
+
 if not st.session_state.auth_user:
-    st.markdown("<div style='font-size:24px; font-weight:800; color:#0C3861; text-align:center; margin-bottom:6px;'>🩺 HỆ THỐNG TRỢ LÝ Y TẾ CÁ NHÂN & CHĂM SÓC SỨC KHỎE</div>", unsafe_allow_html=True)
-    st.markdown("<div style='font-size:13px; font-weight:600; color:#475569; text-align:center; margin-bottom:20px;'>👨‍⚕️ Tác giả phần mềm: DR. Nguyễn Tiến Toàn | ✉️ Email: toanbvtimhn@gmail.com</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:24px; font-weight:800; color:#0C3861; text-align:center; margin-bottom:4px;'>🩺 HỆ THỐNG TRỢ LÝ Y TẾ CÁ NHÂN & CHĂM SÓC SỨC KHỎE</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:13px; font-weight:600; color:#475569; text-align:center; margin-bottom:18px;'>👨‍⚕️ Tác giả phần mềm: DR. Nguyễn Tiến Toàn | ✉️ Email: toanbvtimhn@gmail.com</div>", unsafe_allow_html=True)
 
-    col_l1, col_l2 = st.columns([1, 1])
+    # --------------------------------------------------------------------------
+    # 1. MÀN HÌNH ĐĂNG NHẬP
+    # --------------------------------------------------------------------------
+    if st.session_state.auth_screen_mode == "login":
+        col_space_l, col_login_box, col_space_r = st.columns([1, 1.35, 1])
 
-    with col_l1:
-        st.subheader("🔑 Đăng Nhập Hệ Thống")
-        with st.form("login_form_direct"):
-            l_user = st.text_input("Tên đăng nhập / Số điện thoại:", placeholder="Nhập tên tài khoản hoặc SĐT...")
-            l_pass = st.text_input("Mật khẩu:", type="password", placeholder="Nhập mật khẩu...")
-            btn_login = st.form_submit_button("🚀 Đăng Nhập", width="stretch")
-
-        if btn_login:
-            input_account = l_user.strip()
-            input_password = l_pass.strip()
-            
-            if not input_account or not input_password:
-                st.warning("Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.")
-            else:
-                st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
-                user_info = st.session_state.users_db.get(input_account)
+        with col_login_box:
+            with st.container(border=True):
+                st.subheader("🔑 Đăng Nhập Hệ Thống")
+                st.caption("Nhập tài khoản để tiếp cận hồ sơ bệnh án và trợ lý y tế:")
                 
-                if user_info and user_info["password"] == input_password:
-                    st.session_state.auth_user = user_info
-                    st.session_state.active_user_id = user_info["user_id"]
-                    st.toast(f"🎉 Đăng nhập thành công! Quyền: {user_info.get('role')}")
-                    st.rerun()
-                else:
-                    st.error("❌ Tên đăng nhập hoặc mật khẩu không chính xác.")
+                with st.form("form_login_centered"):
+                    l_user = st.text_input("Tên đăng nhập / Số điện thoại:", placeholder="Nhập tên tài khoản hoặc số điện thoại...")
+                    l_pass = st.text_input("Mật khẩu:", type="password", placeholder="Nhập mật khẩu...")
+                    
+                    btn_login = st.form_submit_button("🚀 Đăng Nhập", type="primary", width="stretch")
 
-    with col_l2:
-        st.subheader("📝 Đăng Ký Tài Khoản Mới")
-        if not st.session_state.reg_otp_step:
-            with st.form("reg_form_step1"):
-                r_name = st.text_input("Họ và tên bệnh nhân:")
-                r_user = st.text_input("Tên đăng nhập mong muốn:")
-                r_pass = st.text_input("Mật khẩu (từ 6 ký tự trở lên):", type="password")
-                c_p, c_e = st.columns(2)
-                with c_p:
-                    r_phone = st.text_input("Số điện thoại:")
-                with c_e:
-                    r_email = st.text_input("Gmail nhận OTP:")
-                c_a, c_g = st.columns(2)
-                with c_a:
-                    r_age = st.number_input("Tuổi:", min_value=1, max_value=120, value=30)
-                with c_g:
-                    r_gender = st.selectbox("Giới tính:", ["Nam", "Nữ", "Khác"])
-                btn_send_reg_otp = st.form_submit_button("📩 Gửi Mã Xác Thực OTP Về Gmail", width="stretch")
-
-            if btn_send_reg_otp:
-                st.session_state.users_db, _ = get_all_users_from_db()
-                if not (r_name.strip() and r_user.strip() and r_pass.strip() and r_phone.strip() and r_email.strip()):
-                    st.warning("Vui lòng điền đầy đủ thông tin.")
-                elif len(r_pass.strip()) < 6:
-                    st.error("Mật khẩu bắt buộc từ 6 ký tự trở lên.")
-                elif "@" not in r_email.strip():
-                    st.error("Email không hợp lệ.")
-                elif r_user.strip() in st.session_state.users_db:
-                    st.error("Tên đăng nhập này đã được sử dụng.")
-                else:
-                    otp_reg = f"{random.randint(100000, 999999)}"
-                    with st.spinner(f"Đang gửi mã xác thực tới {r_email.strip()}..."):
-                        ok, msg = send_otp_email(r_email.strip(), otp_reg, "Đăng ký tài khoản mới")
-                        if ok:
-                            st.session_state.reg_otp_code = otp_reg
-                            st.session_state.reg_temp_data = {
-                                "name": r_name.strip(), "user": r_user.strip(), "pass": r_pass.strip(),
-                                "phone": r_phone.strip(), "email": r_email.strip(), "age": r_age, "gender": r_gender
-                            }
-                            st.session_state.reg_otp_step = True
+                if btn_login:
+                    input_acc = l_user.strip()
+                    input_pwd = l_pass.strip()
+                    if not input_acc or not input_pwd:
+                        st.warning("⚠️ Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.")
+                    else:
+                        st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
+                        user_info = st.session_state.users_db.get(input_acc)
+                        if user_info and user_info["password"] == input_pwd:
+                            st.session_state.auth_user = user_info
+                            st.session_state.active_user_id = user_info["user_id"]
+                            st.toast(f"🎉 Đăng nhập thành công! Chào mừng {user_info['full_name']}.")
                             st.rerun()
                         else:
-                            st.error(f"❌ {msg}")
-        else:
-            reg_d = st.session_state.reg_temp_data
-            st.info(f"📩 Mã xác nhận bảo mật gửi tới: **{reg_d['email']}**")
-            with st.form("reg_form_step2"):
-                inp_reg_otp = st.text_input("Nhập mã OTP 6 chữ số:", max_chars=6)
-                c_reg1, c_reg2 = st.columns([1.5, 1])
-                with c_reg1:
-                    btn_finish_reg = st.form_submit_button("🎉 Xác Nhận Tạo Tài Khoản")
-                with c_reg2:
-                    btn_cancel_reg = st.form_submit_button("❌ Hủy bỏ")
+                            st.error("❌ Tên đăng nhập hoặc mật khẩu không chính xác.")
 
-            if btn_cancel_reg:
-                st.session_state.reg_otp_step = False
-                st.session_state.reg_temp_data = {}
-                st.session_state.reg_otp_code = None
-                st.rerun()
-
-            if btn_finish_reg:
-                if inp_reg_otp.strip() == st.session_state.reg_otp_code:
-                    try:
-                        with db_cursor() as cur_reg:
-                            cur_reg.execute("""
-                                INSERT INTO app_users (username, password, full_name, phone, email, age, gender)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """, (reg_d['user'], reg_d['pass'], reg_d['name'], reg_d['phone'], reg_d['email'], reg_d['age'], reg_d['gender']))
-
-                        get_cached_users_from_render.clear()
-                        st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
+                # Hai nút tiện ích phía dưới: Quên mật khẩu & Đăng ký
+                c_btn1, c_btn2 = st.columns(2)
+                with c_btn1:
+                    if st.button("❓ Quên tài khoản / MK", width="stretch"):
+                        st.session_state.auth_screen_mode = "forgot"
+                        st.session_state.forgot_otp_step = False
+                        st.session_state.forgot_user_data = {}
+                        st.session_state.forgot_otp_code = None
+                        st.rerun()
+                with c_btn2:
+                    if st.button("📝 Đăng ký tài khoản", width="stretch"):
+                        st.session_state.auth_screen_mode = "register"
                         st.session_state.reg_otp_step = False
                         st.session_state.reg_temp_data = {}
                         st.session_state.reg_otp_code = None
-                        st.success("🎉 Đăng ký thành công và đã lưu an toàn trên Render! Vui lòng đăng nhập.")
-                    except Exception as ex:
-                        st.error(f"❌ Lỗi ghi nhận tài khoản lên Render: {ex}")
+                        st.rerun()
+
+    # --------------------------------------------------------------------------
+    # 2. MÀN HÌNH QUÊN TÊN ĐĂNG NHẬP / MẬT KHẨU
+    # --------------------------------------------------------------------------
+    elif st.session_state.auth_screen_mode == "forgot":
+        col_sp_l, col_forgot_box, col_sp_r = st.columns([1, 1.45, 1])
+
+        with col_forgot_box:
+            with st.container(border=True):
+                st.subheader("🔑 Khôi Phục Tài Khoản & Mật Khẩu")
+                
+                # BƯỚC 1: NHẬP EMAIL ĐỂ TÌM TÀI KHOẢN VÀ GỬI OTP
+                if not st.session_state.forgot_otp_step:
+                    st.caption("Nhập địa chỉ Gmail bạn đã đăng ký để tìm lại Tên đăng nhập và tạo Mật khẩu mới:")
+                    
+                    with st.form("form_forgot_step1"):
+                        inp_email = st.text_input("Địa chỉ Gmail đã đăng ký:", placeholder="VD: nguyenvanan@gmail.com")
+                        
+                        c_fg1, c_fg2 = st.columns([1.6, 1])
+                        with c_fg1:
+                            btn_find_acc = st.form_submit_button("📩 Gửi Mã OTP Xác Thực", type="primary", width="stretch")
+                        with c_fg2:
+                            btn_back_login = st.form_submit_button("⬅️ Quay lại", width="stretch")
+
+                    if btn_back_login:
+                        st.session_state.auth_screen_mode = "login"
+                        st.rerun()
+
+                    if btn_find_acc:
+                        email_clean = inp_email.strip().lower()
+                        if not email_clean or "@" not in email_clean:
+                            st.warning("⚠️ Vui lòng nhập địa chỉ Gmail hợp lệ.")
+                        else:
+                            # Tìm tài khoản trong database
+                            found_user = None
+                            try:
+                                with db_cursor() as cur:
+                                    cur.execute("SELECT user_id, username, full_name, email FROM app_users WHERE LOWER(email) = %s LIMIT 1", (email_clean,))
+                                    row = cur.fetchone()
+                                    if row:
+                                        found_user = {"user_id": row[0], "username": row[1], "full_name": row[2], "email": row[3]}
+                            except Exception as ex:
+                                st.error(f"Lỗi kiểm tra dữ liệu: {ex}")
+
+                            if not found_user:
+                                st.error("❌ Không tìm thấy tài khoản nào gắn với địa chỉ Gmail này.")
+                            else:
+                                otp_val = f"{random.randint(100000, 999999)}"
+                                with st.spinner(f"Đang gửi mã xác thực khôi phục về Gmail {email_clean}..."):
+                                    ok, msg = send_otp_email(email_clean, otp_val, "Khôi phục tài khoản / Đặt lại mật khẩu")
+                                    if ok:
+                                        st.session_state.forgot_otp_code = otp_val
+                                        st.session_state.forgot_user_data = found_user
+                                        st.session_state.forgot_otp_step = True
+                                        st.toast("✅ Đã gửi mã OTP thành công!")
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ {msg}")
+
+                # BƯỚC 2: NHẬP OTP VÀ ĐẶT LẠI MẬT KHẨU MỚI
                 else:
-                    st.error("❌ Mã OTP không chính xác.")
+                    u_info = st.session_state.forgot_user_data
+                    st.markdown(f"""
+                        <div style="background:#EFF6FF; border:1px solid #BFDBFE; border-radius:10px; padding:12px; margin-bottom:12px;">
+                            <span style="font-size:13px; color:#1E40AF;">👤 <b>Chủ tài khoản:</b> {u_info['full_name']}</span><br>
+                            <span style="font-size:13.5px; color:#0369A1;">🏷️ <b>Tên đăng nhập của bạn là:</b> <b style="font-size:15px; color:#DC2626;">{u_info['username']}</b></span>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                    with st.form("form_forgot_step2"):
+                        inp_otp = st.text_input("Nhập mã OTP 6 số từ Gmail:", max_chars=6, placeholder="VD: 123456")
+                        new_pass = st.text_input("Nhập Mật Khẩu Mới (từ 6 ký tự):", type="password", placeholder="Tối thiểu 6 ký tự...")
+                        confirm_pass = st.text_input("Nhập lại Mật Khẩu Mới:", type="password", placeholder="Nhập lại mật khẩu...")
+
+                        c_rst1, c_rst2 = st.columns([1.6, 1])
+                        with c_rst1:
+                            btn_do_reset = st.form_submit_button("✅ Cập Nhật Mật Khẩu", type="primary", width="stretch")
+                        with c_rst2:
+                            btn_cancel_reset = st.form_submit_button("❌ Hủy bỏ", width="stretch")
+
+                    if btn_cancel_reset:
+                        st.session_state.forgot_otp_step = False
+                        st.session_state.forgot_user_data = {}
+                        st.session_state.forgot_otp_code = None
+                        st.session_state.auth_screen_mode = "login"
+                        st.rerun()
+
+                    if btn_do_reset:
+                        if inp_otp.strip() != st.session_state.forgot_otp_code:
+                            st.error("❌ Mã OTP không chính xác. Vui lòng kiểm tra lại Gmail.")
+                        elif len(new_pass.strip()) < 6:
+                            st.error("❌ Mật khẩu mới phải có ít nhất 6 ký tự.")
+                        elif new_pass.strip() != confirm_pass.strip():
+                            st.error("❌ Hai mật khẩu nhập vào không khớp nhau.")
+                        else:
+                            try:
+                                with db_cursor() as cur:
+                                    cur.execute("UPDATE app_users SET password = %s WHERE user_id = %s", (new_pass.strip(), u_info["user_id"]))
+                                
+                                st.cache_data.clear()
+                                st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
+
+                                st.session_state.forgot_otp_step = False
+                                st.session_state.forgot_user_data = {}
+                                st.session_state.forgot_otp_code = None
+                                st.session_state.auth_screen_mode = "login"
+
+                                st.success("🎉 **Đổi mật khẩu thành công!** Vui lòng sử dụng mật khẩu mới để đăng nhập.")
+                                st.rerun()
+                            except Exception as ex_db:
+                                st.error(f"❌ Lỗi cập nhật cơ sở dữ liệu: {ex_db}")
+
+    # --------------------------------------------------------------------------
+    # 3. MÀN HÌNH ĐĂNG KÝ TÀI KHOẢN MỚI
+    # --------------------------------------------------------------------------
+    else:
+        col_sp_l, col_reg_box, col_sp_r = st.columns([1, 1.8, 1])
+
+        with col_reg_box:
+            with st.container(border=True):
+                st.subheader("📝 Đăng Ký Tài Khoản Mới")
+                st.caption("Điền thông tin bệnh nhân để thiết lập hồ sơ theo dõi:")
+
+                if not st.session_state.reg_otp_step:
+                    with st.form("form_register_with_address"):
+                        r_name = st.text_input("Họ và tên bệnh nhân:", placeholder="VD: Nguyễn Văn An...")
+                        r_user = st.text_input("Tên đăng nhập mong muốn:", placeholder="VD: nguyenvanan123...")
+                        r_pass = st.text_input("Mật khẩu (từ 6 ký tự trở lên):", type="password", placeholder="Tối thiểu 6 ký tự...")
+                        
+                        r_addr = st.text_input("🏠 Địa chỉ nơi ở / lưu trú:", placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành phố...")
+
+                        c_p, c_e = st.columns(2)
+                        with c_p:
+                            r_phone = st.text_input("Số điện thoại:", placeholder="VD: 0987654321")
+                        with c_e:
+                            r_email = st.text_input("Gmail nhận mã OTP:", placeholder="VD: toanbvtimhn@gmail.com")
+
+                        c_a, c_g = st.columns(2)
+                        with c_a:
+                            r_age = st.number_input("Tuổi:", min_value=1, max_value=120, value=30)
+                        with c_g:
+                            r_gender = st.selectbox("Giới tính:", ["Nam", "Nữ", "Khác"])
+
+                        c_btn_r1, c_btn_r2 = st.columns([1.8, 1])
+                        with c_btn_r1:
+                            btn_send_reg_otp = st.form_submit_button("📩 Gửi Mã Xác Thực OTP Về Gmail", type="primary", width="stretch")
+                        with c_btn_r2:
+                            btn_back_to_login_form = st.form_submit_button("⬅️ Đăng nhập", width="stretch")
+
+                    if btn_back_to_login_form:
+                        st.session_state.auth_screen_mode = "login"
+                        st.rerun()
+
+                    if btn_send_reg_otp:
+                        st.session_state.users_db, _ = get_all_users_from_db()
+                        email_clean = r_email.strip().lower()
+                        user_clean = r_user.strip()
+
+                        if not (r_name.strip() and user_clean and r_pass.strip() and r_phone.strip() and email_clean and r_addr.strip()):
+                            st.warning("⚠️ Vui lòng điền đầy đủ thông tin.")
+                        elif len(r_pass.strip()) < 6:
+                            st.error("❌ Mật khẩu bắt buộc từ 6 ký tự trở lên.")
+                        elif "@" not in email_clean:
+                            st.error("❌ Địa chỉ Email không hợp lệ.")
+                        elif user_clean in st.session_state.users_db:
+                            st.error("❌ Tên đăng nhập này đã tồn tại.")
+                        else:
+                            # --- KIỂM TRA EMAIL ĐÃ TỒN TẠI HAY CHƯA ---
+                            email_exists = False
+                            try:
+                                with db_cursor() as cur_check:
+                                    cur_check.execute("SELECT user_id FROM app_users WHERE LOWER(email) = %s LIMIT 1", (email_clean,))
+                                    if cur_check.fetchone():
+                                        email_exists = True
+                            except Exception as e:
+                                print(f"Lỗi kiểm tra email: {e}")
+
+                            if email_exists:
+                                st.error(f"❌ Email '{email_clean}' đã được sử dụng cho một tài khoản khác. Vui lòng dùng tính năng 'Quên tài khoản / MK' hoặc sử dụng email khác.")
+                            else:
+                                # Nếu chưa tồn tại, tiến hành tạo và gửi mã OTP như bình thường
+                                otp_reg = f"{random.randint(100000, 999999)}"
+                                with st.spinner(f"Đang gửi mã xác thực tới {email_clean}..."):
+                                    ok, msg = send_otp_email(email_clean, otp_reg, "Đăng ký tài khoản mới")
+                                    if ok:
+                                        st.session_state.reg_otp_code = otp_reg
+                                        st.session_state.reg_temp_data = {
+                                            "name": r_name.strip(), 
+                                            "user": user_clean, 
+                                            "pass": r_pass.strip(),
+                                            "addr": r_addr.strip(),
+                                            "phone": r_phone.strip(), 
+                                            "email": email_clean, 
+                                            "age": r_age, 
+                                            "gender": r_gender
+                                        }
+                                        st.session_state.reg_otp_step = True
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ {msg}")
+
+                else:
+                    reg_d = st.session_state.reg_temp_data
+                    st.info(f"📩 Mã xác nhận bảo mật gồm 6 số đã được gửi tới Gmail: **{reg_d['email']}**")
+                    
+                    with st.form("form_verify_reg_otp"):
+                        inp_reg_otp = st.text_input("Nhập mã OTP 6 chữ số:", max_chars=6, placeholder="Ví dụ: 123456")
+                        c_vf1, c_vf2 = st.columns([1.5, 1])
+                        with c_vf1:
+                            btn_finish_reg = st.form_submit_button("🎉 Xác Nhận Tạo Tài Khoản", type="primary", width="stretch")
+                        with c_vf2:
+                            btn_cancel_reg = st.form_submit_button("❌ Hủy bỏ", width="stretch")
+
+                    if btn_cancel_reg:
+                        st.session_state.reg_otp_step = False
+                        st.session_state.reg_temp_data = {}
+                        st.session_state.reg_otp_code = None
+                        st.session_state.auth_screen_mode = "login"
+                        st.rerun()
+
+                    if btn_finish_reg:
+                        if inp_reg_otp.strip() == st.session_state.reg_otp_code:
+                            try:
+                                with db_cursor() as cur_reg:
+                                    cur_reg.execute("""
+                                        INSERT INTO app_users (username, password, full_name, phone, email, age, gender, address)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                    """, (
+                                        reg_d['user'], reg_d['pass'], reg_d['name'], 
+                                        reg_d['phone'], reg_d['email'], reg_d['age'], 
+                                        reg_d['gender'], reg_d.get('addr', 'Chưa cập nhật')
+                                    ))
+                                st.cache_data.clear()
+                                st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()[cite: 5]
+                                st.session_state.reg_otp_step = False
+                                st.session_state.auth_screen_mode = "login"
+                                st.success("🎉 Đăng ký thành công! Vui lòng đăng nhập.")
+                                st.rerun()
+                            except psycopg2.errors.UniqueViolation:
+                                st.error("❌ Email hoặc Tên đăng nhập này vừa được đăng ký bởi một phiên khác.")
+                            except Exception as ex:
+                                st.error(f"❌ Lỗi ghi nhận tài khoản: {ex}")
+                        else:
+                            st.error("❌ Mã OTP không chính xác. Vui lòng kiểm tra lại hộp thư Gmail.")
+
     st.stop()
 
 
@@ -1548,52 +1821,132 @@ if st.session_state.main_navigation == "🏠 Tổng quan sức khỏe":
     # CỘT PHỤ (BÊN PHẢI NGANG HÀNG VỚI COL_MAIN)
     # ============================================================
     with col_side:
-        st.markdown(f"""
-            <div class="dashboard-card">
-                <div class="card-title">
-                    <span>👤 Thông tin cá nhân</span>
-                    <span class="status-badge">{'⭐ VIP MEMBER' if current_prof.get('is_vip') else 'Chuẩn'}</span>
-                </div>
-                <div style="text-align: center; margin-bottom: 8px;">
-                    <img src="{avatar_display}" width="75" height="75" style="border-radius: 50%; border: 3px solid #EBF4FC; object-fit: cover;">
-                    <div style="font-size: 15px; font-weight: 800; color: #0E355B; margin-top: 6px;">{current_prof['full_name']}</div>
-                    <div style="font-size: 12px; color: #7B8F9F;">{current_prof['gender']} · {current_prof['age']} tuổi</div>
-                </div>
-                <div style="font-size: 12px; color: #4B6E8C; line-height: 1.7;">
-                    <div>📞 SĐT: <b>{current_prof.get('phone', 'Chưa có')}</b></div>
-                    <div>✉️ Email: <b>{current_prof.get('email', 'Chưa có')}</b></div>
-                </div>
-            </div>
+        # CSS đẩy mép trên lên ngang bằng banner và định dạng nút bấm hiển thị đẹp
+        st.markdown("""
+        <style>
+        /* Đẩy khung lên cao hẳn để khớp với đỉnh banner bên trái */
+        div[data-testid="column"]:nth-child(2) div[data-testid="stContainer"] {
+            margin-top: -135px !important;
+        }
+
+        /* Tùy chỉnh nút popover cài đặt nằm ở góc dưới */
+        div[data-testid="stPopover"] > button {
+            background-color: #F8FAFC !important;
+            border: 1px solid #CBD5E1 !important;
+            border-radius: 10px !important;
+            width: 100% !important;
+            height: 40px !important;
+            min-height: 40px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+        }
+        div[data-testid="stPopover"] > button:hover {
+            background-color: #0284C7 !important;
+            border-color: #0284C7 !important;
+            color: #FFFFFF !important;
+        }
+        </style>
         """, unsafe_allow_html=True)
 
-        with st.popover("⚙️ Chỉnh sửa hồ sơ & Cài đặt", width="stretch"):
-            with st.form("form_edit_profile_folder"):
-                f_name = st.text_input("Họ và tên:", value=current_prof.get("full_name", ""))
-                f_age = st.number_input("Tuổi:", min_value=1, max_value=120, value=int(current_prof.get("age", 30)))
-                g_list = ["Nam", "Nữ", "Khác"]
-                f_gender = st.selectbox("Giới tính:", g_list, index=g_list.index(current_prof.get("gender", "Nam")) if current_prof.get("gender") in g_list else 0)
-                f_phone = st.text_input("Số điện thoại:", value=current_prof.get("phone", ""))
-                f_email = st.text_input("Địa chỉ Email:", value=current_prof.get("email", ""))
-                f_bio = st.text_area("🌱 Sở thích:", value=current_prof.get("bio", "Yêu thích thể thao, đọc sách y khoa"), height=70)
-                f_av_file = st.file_uploader("Thay ảnh đại diện:", type=["png", "jpg", "jpeg"], key="pop_av_file")
-                btn_save_folder_profile = st.form_submit_button("💾 Lưu thay đổi", type="primary", width="stretch")
+        with st.container(border=True):
+            # Hàng tiêu đề & nhãn VIP
+            c_h1, c_h2 = st.columns([1.5, 1])
+            with c_h1:
+                st.markdown("<div style='font-size: 15px; font-weight: 800; color: #0C3861; padding-top: 2px;'>👤 Thông tin cá nhân</div>", unsafe_allow_html=True)
+            with c_h2:
+                if current_prof.get("is_vip"):
+                    st.markdown("<div style='text-align: right;'><span style='background: #FEF3C7; color: #D97706; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 12px;'>⭐ VIP MEMBER</span></div>", unsafe_allow_html=True)
 
-            if btn_save_folder_profile:
-                new_av_b64 = current_prof.get("avatar")
-                if f_av_file:
-                    new_av_b64 = f"data:{f_av_file.type};base64,{base64.b64encode(f_av_file.getvalue()).decode()}"
+            # Avatar & Thông tin cơ bản
+            av_data = current_prof.get("avatar") or "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
+            st.markdown(f"""
+                <div style="text-align: center; margin: 8px 0 6px 0;">
+                    <img src="{av_data}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #E2E8F0;" />
+                    <div style="font-size: 16px; font-weight: 800; color: #0C3861; margin-top: 4px;">{current_prof.get('full_name', 'Chưa đặt tên')}</div>
+                    <div style="font-size: 12px; color: #64748B; margin-bottom: 6px;">{current_prof.get('gender', 'Nam')} · {current_prof.get('age', 30)} tuổi</div>
+                </div>
+                <div style="font-size: 12.5px; color: #334155; margin-bottom: 6px;">
+                    📞 <b>SĐT:</b> {current_prof.get('phone', 'Chưa cập nhật')}
+                </div>
+                <div style="font-size: 12.5px; color: #334155; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{current_prof.get('email', '')}">
+                    ✉️ <b>Email:</b> {current_prof.get('email', 'Chưa cập nhật')}
+                </div>
+                <div style="font-size: 12.5px; color: #334155; margin-bottom: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{current_prof.get('address', '')}">
+                    🏠 <b>Địa chỉ:</b> {current_prof.get('address', 'Chưa cập nhật')}
+                </div>
+            """, unsafe_allow_html=True)
 
-                with db_cursor() as cur_u:
-                    cur_u.execute("""
-                        UPDATE app_users 
-                        SET full_name = %s, age = %s, gender = %s, phone = %s, email = %s, bio = %s, avatar = %s
-                        WHERE user_id = %s
-                    """, (f_name.strip(), f_age, f_gender, f_phone.strip(), f_email.strip(), f_bio.strip(), new_av_b64, USER_ID))
+            # Nút cài đặt hiển thị rõ chữ kèm icon răng cưa ở góc dưới
+            with st.popover("⚙️ Cài đặt hệ thống", use_container_width=True):
+                st.markdown("<div style='font-weight: 700; color: #0C3861; margin-bottom: 8px;'>⚙️ Cài đặt hệ thống tài khoản</div>", unsafe_allow_html=True)
+                tab_edit_info, tab_change_pwd = st.tabs(["👤 Thông tin cá nhân", "🔑 Đổi mật khẩu"])
 
-                get_cached_users_from_render.clear()
-                st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
-                st.toast("🎉 Đã cập nhật hồ sơ cá nhân lên Render!")
-                st.rerun()
+                # TAB 1: CHỈNH SỬA THÔNG TIN CÁ NHÂN & ĐỊA CHỈ
+                with tab_edit_info:
+                    with st.form("form_edit_profile_folder"):
+                        f_name = st.text_input("Họ và tên:", value=current_prof.get("full_name", ""))
+                        f_age = st.number_input("Tuổi:", min_value=1, max_value=120, value=int(current_prof.get("age", 30)))
+                        g_list = ["Nam", "Nữ", "Khác"]
+                        f_gender = st.selectbox("Giới tính:", g_list, index=g_list.index(current_prof.get("gender", "Nam")) if current_prof.get("gender") in g_list else 0)
+                        f_phone = st.text_input("Số điện thoại:", value=current_prof.get("phone", ""))
+                        f_email = st.text_input("Địa chỉ Email:", value=current_prof.get("email", ""))
+                        f_addr = st.text_input("🏠 Địa chỉ lưu trú:", value=current_prof.get("address", "Chưa cập nhật"))
+                        f_bio = st.text_area("🌱 Ghi chú thêm:", value=current_prof.get("bio", ""), height=70)
+                        f_av_file = st.file_uploader("Thay ảnh đại diện:", type=["png", "jpg", "jpeg"], key="pop_av_file")
+                        btn_save_folder_profile = st.form_submit_button("💾 Lưu thay đổi", type="primary", use_container_width=True)
+
+                    if btn_save_folder_profile:
+                        new_av_b64 = current_prof.get("avatar")
+                        if f_av_file:
+                            new_av_b64 = f"data:{f_av_file.type};base64,{base64.b64encode(f_av_file.getvalue()).decode()}"
+
+                        with db_cursor() as cur_u:
+                            cur_u.execute("""
+                                UPDATE app_users 
+                                SET full_name = %s, age = %s, gender = %s, phone = %s, email = %s, bio = %s, avatar = %s, address = %s
+                                WHERE user_id = %s
+                            """, (f_name.strip(), f_age, f_gender, f_phone.strip(), f_email.strip(), f_bio.strip(), new_av_b64, f_addr.strip(), USER_ID))
+
+                        st.cache_data.clear()
+                        st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
+                        st.toast("🎉 Đã cập nhật thông tin cá nhân thành công!")
+                        st.rerun()
+
+                # TAB 2: ĐỔI MẬT KHẨU TỰ THÂN
+                with tab_change_pwd:
+                    st.caption("Để bảo mật, vui lòng nhập mật khẩu hiện tại trước khi tạo mật khẩu mới:")
+                    with st.form("form_user_self_change_password"):
+                        old_pass = st.text_input("Mật khẩu hiện tại:", type="password", placeholder="Nhập mật khẩu đang dùng...")
+                        new_pass1 = st.text_input("Mật khẩu mới (từ 6 ký tự):", type="password", placeholder="Tối thiểu 6 ký tự...")
+                        new_pass2 = st.text_input("Nhập lại mật khẩu mới:", type="password", placeholder="Xác nhận lại mật khẩu...")
+                        btn_submit_change_pwd = st.form_submit_button("✅ Cập Nhật Mật Khẩu", type="primary", use_container_width=True)
+
+                    if btn_submit_change_pwd:
+                        curr_account = st.session_state.users_db.get(st.session_state.auth_user.get("username", ""))
+                        current_real_password = curr_account["password"] if curr_account else st.session_state.auth_user.get("password", "")
+
+                        if old_pass.strip() != current_real_password:
+                            st.error("❌ Mật khẩu hiện tại không chính xác.")
+                        elif len(new_pass1.strip()) < 6:
+                            st.error("❌ Mật khẩu mới phải có ít nhất 6 ký tự.")
+                        elif new_pass1.strip() != new_pass2.strip():
+                            st.error("❌ Hai mật khẩu mới nhập vào không khớp nhau.")
+                        elif new_pass1.strip() == old_pass.strip():
+                            st.warning("⚠️ Mật khẩu mới không được trùng với mật khẩu cũ.")
+                        else:
+                            try:
+                                with db_cursor() as cur_pwd:
+                                    cur_pwd.execute("UPDATE app_users SET password = %s WHERE user_id = %s", (new_pass1.strip(), USER_ID))
+                                
+                                st.cache_data.clear()
+                                st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
+                                st.session_state.auth_user["password"] = new_pass1.strip()
+                                st.success("🎉 Đổi mật khẩu thành công!")
+                                st.rerun()
+                            except Exception as ex_pwd:
+                                st.error(f"❌ Lỗi cập nhật mật khẩu: {ex_pwd}")
 
         dash_my_prescriptions = []
         try:
@@ -1689,8 +2042,8 @@ elif st.session_state.main_navigation == "📰 Tin tức & Khuyến cáo y tế"
             "category": "PHÓNG SỰ CHUYÊN SÂU - CẤP CỨU TIM MẠCH",
             "read_time": "15 phút đọc",
             "date": "06/09/2026",
-            "author": "BS. Nguyễn Tiến Toàn (Khoa Hồi sức Tim mạch - Thần kinh)",
-            "title": "Hồ Sơ Đột Quỵ: 'Cơn Địa Chấn' Trong Lòng Não Bộ Và Cuộc Đua Sinh Tử Với Từng Giây Đồng Hồ",
+            "author": "Khoa Hồi sức Tim mạch - Thần kinh",
+            "title": "Đột Quỵ: 'Cơn Địa Chấn' Trong Lòng Não Bộ Và Cuộc Đua Sinh Tử Với Từng Giây Đồng Hồ",
             "summary": "Khoảng 30% bệnh nhân trước khi đột quỵ thực sự từng trải qua 'cơn đột quỵ nhỏ' (TIA) nhưng bỏ qua vì tự hết sau vài phút. Dưới lăng kính sinh lý bệnh, đột quỵ không xảy ra ngẫu nhiên mà là đỉnh điểm của một chuỗi biến cố tổn thương lớp nội mạc mạch máu suốt nhiều năm. Cùng mổ xẻ cơ chế tắc mạch, vùng tranh tối tranh sáng và những điều cấm kỵ khi sơ cứu.",
             "image": "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=1000&auto=format&fit=crop&q=80",
             "content": """
@@ -2303,6 +2656,123 @@ Kể cả khi nạn nhân bị điện giật chỉ trong tích tắc, sau đó 
 
 Dòng điện chạy qua cơ thể có thể để lại những tổn thương vi thể âm thầm ở hệ dẫn truyền cơ tim, gây ra các cơn **rối loạn nhịp thất muộn (nhanh thất, rung thất)** xuất hiện sau đó 6 đến 12 tiếng gây đột tử khi đang ngủ. Đồng thời, chất độc myoglobin giải phóng từ các khối cơ bị dòng điện nướng chín sẽ trôi về làm tắc ống thận, dẫn đến suy thận cấp vô niệu nếu không được truyền dịch kiềm hóa nước tiểu kịp thời.
             """
+        },
+        {
+            "id": 13,
+            "category": "DINH DƯỠNG & AN TOÀN THỰC PHẨM",
+            "read_time": "12 phút đọc",
+            "date": "16/09/2026",
+            "author": "DR. Nguyễn Tiến Toàn",
+            "title": "Từ Căn Bếp Đến Sức Khỏe: Những Chất Có Hại Có Thể Hình Thành Trong Ăn Uống Hằng Ngày Và Cách Phòng Tránh",
+            "summary": "Cách lựa chọn, chế biến và bảo quản thực phẩm ảnh hưởng trực tiếp đến sức khỏe. Cùng điểm mặt các hợp chất tiềm ẩn như Acrylamide, HCA, PAH, Nitrosamine, Aflatoxin trong gian bếp và giải pháp khắc phục đơn giản mỗi ngày.",
+            "image": "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1000&auto=format&fit=crop&q=80",
+            "content": """
+## MỞ ĐẦU
+
+Mỗi ngày, chúng ta đều ăn uống và sử dụng nhiều loại thực phẩm khác nhau. Tuy nhiên, cách lựa chọn, chế biến và bảo quản thực phẩm có thể ảnh hưởng lớn đến sức khỏe lâu dài. Một số chất có hại có thể hình thành trong quá trình nấu nướng hoặc xuất hiện do thực phẩm bị nhiễm bẩn, bảo quản không đúng cách.
+
+Điều này không có nghĩa rằng mọi món chiên, nướng hay mọi loại thực phẩm đều gây ung thư. Nguy cơ thực tế phụ thuộc vào loại thực phẩm, nhiệt độ, thời gian chế biến, lượng tiêu thụ và mức độ phơi nhiễm tích lũy. Vì vậy, thay vì hoang mang lo sợ hoặc loại bỏ hoàn toàn những món ăn quen thuộc, chúng ta nên tìm hiểu cách chế biến và sử dụng chúng một cách khoa học.
+
+---
+
+## 1. CHIÊN, RÁN THỰC PHẨM QUÁ LÂU HOẶC ĐỂ CHÁY SẪM MÀU
+
+* **Thói quen:** Khoai tây, bánh mì, ngũ cốc và nhiều thực phẩm giàu tinh bột thường được chiên, nướng hoặc rang ở nhiệt độ cao. Khi chế biến quá lâu, bề mặt thực phẩm có thể chuyển sang màu nâu sẫm hoặc cháy đen.
+* **Chất có thể hình thành:** Một trong những chất được quan tâm nhiều nhất là **Acrylamide**. Hợp chất này hình thành từ phản ứng giữa axit amin asparagine và đường khử khi nấu ở nhiệt độ trên 120°C.
+* **Tác hại:** Acrylamide đã được chứng minh có khả năng gây ung thư ở động vật thí nghiệm khi tiếp xúc liều cao. Đối với cơ thể người, mối liên hệ giữa acrylamide từ chế độ ăn và nguy cơ ung thư vẫn đang được tiếp tục nghiên cứu sâu rộng.
+* **Cách hạn chế:** Không chiên hoặc nướng thực phẩm quá lâu. Với thực phẩm giàu tinh bột, chỉ nên chế biến đến khi đạt màu vàng nhạt/vàng rơm thay vì để chuyển sang màu nâu đậm hoặc cháy cạnh.
+
+---
+
+## 2. NƯỚNG THỊT Ở NHIỆT ĐỘ QUÁ CAO
+
+* **Thói quen:** Thịt nướng trên than hoa trực tiếp hoặc nướng nhiệt độ cao thường xuất hiện các vệt cháy xém. Khi mỡ từ thịt nhỏ giọt xuống than hồng, khói bốc lên bám ngược trở lại bề mặt miếng thịt.
+* **Chất có thể hình thành:** Hai nhóm chất điển hình là **HCA (Amine dị vòng)** và **PAH (Hydrocarbon thơm đa vòng)**. 
+  * *HCA* hình thành khi protein (axit amin, creatine) trong thịt bị nhiệt phân ở nhiệt độ cao.
+  * *PAH* sinh ra từ khói mỡ cháy rồi ngưng tụ bám vào thức ăn.
+* **Tác hại:** Các chất này có khả năng bẻ gãy, làm biến dị cấu trúc DNA và làm tăng nguy cơ sinh u biểu mô đường tiêu hóa.
+* **Cách hạn chế:** Tránh để thịt tiếp xúc trực tiếp với ngọn lửa trần; hạn chế nướng ở nhiệt quá cao; chủ động cắt bỏ các phần cháy đen trước khi ăn và sử dụng khay hứng mỡ để mỡ không rơi trực tiếp vào than lửa.
+
+---
+
+## 3. LẠM DỤNG THỊT CHẾ BIẾN SẴN
+
+* **Thói quen:** Thường xuyên sử dụng xúc xích, thịt xông khói, giăm bông, thịt nguội đóng hộp trong bữa ăn hàng ngày vì tính tiện lợi.
+* **Chất có thể hình thành:** Trong quá trình xử lý bảo quản hoặc chuyển hóa tại đường ruột, muối nitrit/nitrat thêm vào có thể kết hợp với amin tạo thành hợp chất **N-nitroso** (tiêu biểu là Nitrosamine).
+* **Tác hại:** Cơ quan Nghiên cứu Ung thư Quốc tế (IARC - thuộc WHO) đã xếp thịt chế biến sẵn vào nhóm 1 chất gây ung thư cho người, dựa trên các bằng chứng liên quan chặt chẽ với ung thư đại trực tràng.
+* **Cách hạn chế:** Giảm tần suất dùng đồ chế biến sẵn; ưu tiên nguồn protein tự nhiên, tươi sống như cá, trứng, các loại đậu hạt và thịt tươi tự chế biến.
+
+---
+
+## 4. SỬ DỤNG RƯỢU BIA THƯỜNG XUYÊN
+
+* **Thói quen:** Lạm dụng đồ uống có cồn trong các buổi liên hoan, gặp gỡ hoặc uống rượu bia mỗi ngày với lượng lớn.
+* **Chất có thể hình thành:** Quá trình oxy hóa ethanol tại gan thông qua enzyme ADH sẽ tạo ra sản phẩm trung gian độc hại là **Acetaldehyde**.
+* **Tác hại:** Acetaldehyde trực tiếp làm tổn thương và ngăn cản quá trình sửa chữa DNA của tế bào, là nguyên nhân hàng đầu dẫn đến xơ gan, ung thư gan, ung thư vòm họng và thực quản.
+* **Cách hạn chế:** Chủ động tiết giảm rượu bia, tăng cường uống nước lọc. Tuyệt đối không xem rượu bia là phương thức giải tỏa căng thẳng hay bồi bổ sức khỏe.
+
+---
+
+## 5. BẢO QUẢN NGŨ CỐC, ĐẬU ĐỖ VÀ CÁC LOẠI HẠT SAI CÁCH
+
+* **Thói quen:** Để lạc (đậu phộng), ngô, gạo, hạt điều ở nơi nóng ẩm lâu ngày dẫn đến ẩm mốc.
+* **Chất có thể hình thành:** Nấm mốc *Aspergillus flavus* phát triển sinh ra độc tố tự nhiên **Aflatoxin**.
+* **Tác hại:** Aflatoxin là độc tố tích lũy sinh học có độc tính cực mạnh đối với tế bào gan và là yếu tố cộng hưởng gây ung thư biểu mô tế bào gan nguyên phát. Độc tố này rất bền với nhiệt độ nấu nướng thông thường.
+* **Cách hạn chế:** Bảo quản hạt ở nơi thật khô ráo, thoáng mát. Khi hạt đã xuất hiện dấu vết ẩm mốc, đổi màu thì phải vứt bỏ toàn bộ, không cố gắng cạo rửa hay cắt bỏ phần mốc vì độc tố đã ngấm sâu vào trong phôi hạt.
+
+---
+
+## 6. SỬ DỤNG DẦU ĂN CHIÊN ĐI CHIÊN LẠI NHIỀU LẦN
+
+* **Thói quen:** Tiếc lượng dầu thừa sau khi chiên ngập dầu nên gạn lại để tái sử dụng nhiều lần sau đó.
+* **Chất có thể hình thành:** Dầu bị gia nhiệt nhiều lần sẽ trải qua phản ứng thủy phân, oxy hóa và trùng hợp sinh ra các **gốc tự do peroxide, aldehyde độc hại** và axit béo chuyển hóa (Trans fat).
+* **Tác hại:** Làm hao hụt vitamin tan trong dầu, gây kích ứng màng nhầy ống tiêu hóa, thúc đẩy xơ vữa động mạch và phản ứng viêm mạn tính nội mô.
+* **Cách hạn chế:** Không để dầu nóng đến mức bốc khói đen. Khi dầu đã đổi sang màu sẫm đặc, có mùi khét hoặc xuất hiện nhiều cặn cặn lơ lửng thì kiên quyết đổ bỏ.
+
+---
+
+## 7. ĂN NHIỀU MÓN QUÁ MẶN VÀ ĐỒ MUỐI CHUA
+
+* **Thói quen:** Ăn đậm vị, thường xuyên ăn cà muối, dưa chua muối xổi hoặc các món kho rim đậm đặc muối, mắm.
+* **Cơ chế tác động:** Nồng độ muối cao làm tăng áp lực thẩm thấu, phá hủy hàng rào lớp chất nhầy bảo vệ niêm mạc dạ dày, khiến dạ dày dễ bị trợt loét và tạo điều kiện cho vi khuẩn Helicobacter pylori (HP) xâm lấn tàn phá.
+* **Tác hại:** Tăng huyết áp mạn tính, thúc đẩy suy thận và gia tăng nguy cơ ung thư dạ dày.
+* **Cách hạn chế:** Giảm lượng muối nêm nếm khi nấu nướng (dưới 5g muối/ngày), ưu tiên món luộc/hấp thanh đạm và hạn chế đồ mắm muối lên men kéo dài.
+
+---
+
+## 8. UỐNG NƯỚC, TRÀ HOẶC ĂN CANH QUÁ NÓNG
+
+* **Thói quen:** Vừa thổi vừa uống trà, cà phê hoặc ăn lẩu khi nước còn sôi sùng sục.
+* **Yếu tố nguy cơ:** IARC xếp đồ uống ở nhiệt độ trên 65°C vào nhóm có khả năng gây ung thư thực quản. Vấn đề nằm ở tổn thương nhiệt vật lý chứ không phải do bản chất của trà hay cà phê.
+* **Tác hại:** Nhiệt độ cao gây bỏng vi thể lớp biểu mô niêm mạc thực quản liên tục. Quá trình viêm loét và sửa chữa tái tạo tế bào bị lặp lại quá mức sẽ làm tăng xác suất phát sinh đột biến gen ác tính.
+* **Cách hạn chế:** Để đồ uống và canh nguội bớt (dưới 50°C - ấm vừa miệng) trước khi thưởng thức.
+
+---
+
+## 9. ĐỂ THỨC ĂN THỪA Ở NHIỆT ĐỘ PHÒNG QUÁ LÂU
+
+* **Thói quen:** Nấu nướng xong để thức ăn thừa trên bàn bếp từ trưa đến tối muộn mới cất vào tủ lạnh.
+* **Chất có thể hình thành:** Đây là môi trường lý tưởng cho vi khuẩn sinh sôi (như *Salmonella, E. coli, Bacillus cereus*) tiết ra các ngoại độc tố vi khuẩn gây ngộ độc tiêu hóa cấp tính.
+* **Cách hạn chế:** Thức ăn ăn không hết cần để nguội nhanh trong vòng 1 - 2 giờ sau bữa ăn rồi bọc kín bảo quản trong ngăn mát tủ lạnh; đun sôi lại kỹ càng trước khi ăn bữa kế tiếp.
+
+---
+
+## 10. XÂY DỰNG CHẾ ĐỘ ĂN UỐNG CÂN BẰNG ĐỂ GIẢM NGUY CƠ
+
+* Không có một "siêu thực phẩm" đơn lẻ nào có thể ngăn ngừa 100% bệnh tật, nhưng một chế độ ăn đa dạng sắc màu sẽ kiến tạo nên lá chắn sinh học vững vàng.
+* **Nguyên tắc hành động:**
+  * Tăng cường rau củ lá đậm, trái cây giàu chất chống oxy hóa tự nhiên (Polyphenol, Vitamin C, Sulforaphane).
+  * Ăn đủ chất xơ hòa tan để nuôi dưỡng hệ vi sinh đường ruột khỏe mạnh.
+  * Uống đủ nước lọc mỗi ngày và giữ cân nặng hợp lý.
+
+---
+
+## KẾT LUẬN
+
+Ung thư hay bệnh lý mạn tính không hình thành sau một đêm, và cũng không xuất hiện chỉ sau một bữa ăn chiên nướng đơn thuần. Nguy cơ thực sự đến từ sự phơi nhiễm độc chất tích tụ qua hàng chục năm từ những thói quen tưởng chừng vô hại.
+
+Bằng cách điều chỉnh những điều rất nhỏ ngay trong căn bếp: **không ăn đồ cháy khét, hạn chế dầu chiên lại, bảo quản đồ khô thoáng mát, giảm ăn mặn và uống nước ở nhiệt độ vừa phải**, bạn đã bảo vệ sức khỏe cho chính mình và gia đình một cách hiệu quả và bền vững nhất.
+"""
         }
     ]
 
@@ -2397,9 +2867,69 @@ Dòng điện chạy qua cơ thể có thể để lại những tổn thương 
                 st.rerun()
 
     # ==========================================================================
-    # VIEW 2: TRANG CHỦ DANH SÁCH 12 BÀI BÁO (BỐ CỤC 3 CỘT GỌN GÀNG, ẢNH NHỎ VỪA VẶN)
+    # VIEW 2: TRANG CHỦ DANH SÁCH 12 BÀI BÁO (TIÊU ĐỀ PHẲNG HOÀN TOÀN, KHÔNG VIỀN)
     # ==========================================================================
     else:
+        # Gỡ sạch toàn bộ khung viền, bóng, nền của nút - biến thành chữ phẳng tự nhiên
+        st.html("""
+        <style>
+        /* Nhắm trực tiếp vào toàn bộ button hiển thị bài báo */
+        [data-testid="stColumn"] div[data-testid="stButton"] > button {
+            background: transparent !important;
+            background-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+            margin: 4px 0 6px 0 !important;
+            text-align: left !important;
+            justify-content: flex-start !important;
+            align-items: flex-start !important;
+            height: auto !important;
+            min-height: unset !important;
+            width: 100% !important;
+            cursor: pointer !important;
+        }
+
+        /* Khi rê chuột hoặc click: không bao giờ hiện khung viền hay nền xám */
+        [data-testid="stColumn"] div[data-testid="stButton"] > button:hover,
+        [data-testid="stColumn"] div[data-testid="stButton"] > button:focus,
+        [data-testid="stColumn"] div[data-testid="stButton"] > button:active {
+            background: transparent !important;
+            background-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+        }
+
+        /* Định dạng chữ tiêu đề: Đậm, gọn gàng đúng 2 dòng, có dấu ... */
+        [data-testid="stColumn"] div[data-testid="stButton"] > button p,
+        [data-testid="stColumn"] div[data-testid="stButton"] > button div {
+            font-size: 14.5px !important;
+            font-weight: 800 !important;
+            color: #0F172A !important;
+            line-height: 1.4 !important;
+            text-align: left !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: -webkit-box !important;
+            -webkit-line-clamp: 2 !important;
+            -webkit-box-orient: vertical !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            transition: color 0.15s ease-in-out !important;
+        }
+
+        /* Hiệu ứng rê chuột: Tiêu đề nổi bật, chuyển xanh dương và gạch chân */
+        [data-testid="stColumn"] div[data-testid="stButton"] > button:hover p,
+        [data-testid="stColumn"] div[data-testid="stButton"] > button:hover div {
+            color: #0284C7 !important;
+            text-decoration: underline !important;
+        }
+        </style>
+        """)
+
         st.markdown("""
             <div style="background: linear-gradient(135deg, #0C3861 0%, #0369A1 100%); color: white; padding: 18px 22px; border-radius: 14px; margin-bottom: 20px; box-shadow: 0 4px 14px rgba(3, 105, 161, 0.15);">
                 <div style="font-size: 20px; font-weight: 900; letter-spacing: 0.3px;">📰 TẠP CHÍ Y KHOA & BẢN TIN SỨC KHỎE CỘNG ĐỒNG </div>
@@ -2407,35 +2937,36 @@ Dòng điện chạy qua cơ thể có thể để lại những tổn thương 
             </div>
         """, unsafe_allow_html=True)
 
-        # Hiển thị 3 cột giúp khung bài viết nhỏ gọn, vừa mắt
         c_grid1, c_grid2, c_grid3 = st.columns(3, gap="medium")
 
         for idx, art in enumerate(ARTICLES_DATA):
             col_target = c_grid1 if idx % 3 == 0 else (c_grid2 if idx % 3 == 1 else c_grid3)
             with col_target:
                 with st.container(border=True):
-                    # Ảnh thumbnail chuẩn chiều cao 135px, không bị choán diện tích
+                    # 1. Ảnh và chuyên mục
                     st.markdown(f"""
                         <div style="width: 100%; height: 135px; border-radius: 8px; overflow: hidden; margin-bottom: 8px;">
                             <img src="{art['image']}" style="width: 100%; height: 100%; object-fit: cover;" />
                         </div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                             <span style="background: #E0F2FE; color: #0284C7; font-size: 9.5px; font-weight: 800; padding: 2px 8px; border-radius: 10px; text-transform: uppercase;">
                                 {art['category']}
                             </span>
                             <span style="font-size: 10.5px; color: #94A3B8;">🕒 {art['read_time']}</span>
                         </div>
-                        <div style="font-size: 14px; font-weight: 800; color: #0F172A; line-height: 1.35; min-height: 38px; margin-bottom: 6px;">
-                            {art['title']}
-                        </div>
-                        <div style="font-size: 11.5px; color: #64748B; line-height: 1.45; min-height: 48px; margin-bottom: 10px;">
+                    """, unsafe_allow_html=True)
+
+                    # 2. Tiêu đề click trực tiếp (chữ phẳng, không viền hộp, không lộ hidden_btn)
+                    if st.button(art["title"], key=f"art_title_btn_{art['id']}", width="stretch"):
+                        st.session_state.current_reading_article_id = art["id"]
+                        st.rerun()
+
+                    # 3. Tóm tắt nội dung bên dưới
+                    st.markdown(f"""
+                        <div style="font-size: 11.5px; color: #64748B; line-height: 1.45; min-height: 48px; margin-top: 4px;">
                             {art['summary'][:95]}...
                         </div>
                     """, unsafe_allow_html=True)
-                    
-                    if st.button("📖 Đọc bài báo", key=f"btn_read_news_item_{art['id']}", width="stretch", type="primary"):
-                        st.session_state.current_reading_article_id = art["id"]
-                        st.rerun()
                         
 # ==============================================================================
 # PHÂN HỆ 1: Khám Bệnh Online (Trợ Lý Y Tế)
@@ -2457,22 +2988,26 @@ elif st.session_state.main_navigation == "🧑‍⚕️Khám Bệnh Online (Tr�
         </style>
     """, unsafe_allow_html=True)
 
-    if "clinic_active_tab" not in st.session_state:
-        st.session_state.clinic_active_tab = "triage"
+    # Cố định luôn luôn 3 Tabs theo đúng thứ tự bạn mong muốn
+    tab_ai, tab_overview, tab_history = st.tabs([
+        "🩺 Khám Bệnh Online Trả Lời & Phân Tích Bệnh Lý (Lâm Sàng + Cận Lâm Sàng)",
+        "📊 Tổng Quan Phác Đồ Điều Trị & Đơn Thuốc",
+        "📋 Lịch Sử Khám Bệnh"
+    ])
 
-    # Tự động ưu tiên đưa tab Đơn thuốc lên đầu nếu người dùng bấm nút Đơn thuốc ở ngoài
-    if st.session_state.clinic_active_tab == "prescriptions":
-        tab_overview, tab_ai, tab_history = st.tabs([
-            "📊 Tổng Quan Phác Đồ Điều Trị & Đơn Thuốc",
-            "🩺 Khám Bệnh Online Trả Lời & Phân Tích Bệnh Lý (Lâm Sàng + Cận Lâm Sàng)",
-            "📋 Lịch Sử Khám Bệnh"
-        ])
-    else:
-        tab_ai, tab_overview, tab_history = st.tabs([
-            "🩺 Khám Bệnh Online Trả Lời & Phân Tích Bệnh Lý (Lâm Sàng + Cận Lâm Sàng)",
-            "📊 Tổng Quan Phác Đồ Điều Trị & Đơn Thuốc",
-            "📋 Lịch Sử Khám Bệnh"
-        ])
+    # Nếu người dùng bấm từ nút "Đơn thuốc & Lịch uống" bên ngoài, tự động active Tab 2 mà không đảo vị trí
+    if st.session_state.get("clinic_active_tab") == "prescriptions":
+        st.html("""
+        <script>
+            setTimeout(function() {
+                const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                if (tabs && tabs.length >= 2) {
+                    tabs[1].click(); // Tự động chọn Tab thứ 2 (Đơn thuốc & Phác đồ)
+                }
+            }, 100);
+        </script>
+        """)
+        st.session_state.clinic_active_tab = "triage"
 
     # ==========================================================================
     # TAB 1: KHÁM BỆNH ONLINE & TRIAGE AI (ĐÃ ĐẨY LÊN ĐẦU TIÊN)
@@ -2894,15 +3429,22 @@ YÊU CẦU: Trả lời ngắn gọn, chuẩn y khoa theo Bộ Y Tế, rõ ràng
                     except Exception as e_extra:
                         st.error(f"Lỗi phản hồi từ AI: {e_extra}")
 
-                # Hiển thị các câu hỏi & giải đáp đã gửi
+                # Hiển thị các câu hỏi & giải đáp đã gửi (Thu gọn khoảng cách dòng)
                 if st.session_state.get("inquiry_chat_history"):
                     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
                     for idx_iq, iq in enumerate(st.session_state.inquiry_chat_history):
                         st.markdown(f"""
-                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px;">
-                                <div style="font-size: 13px; font-weight: 700; color: #0369A1;">❓ Bạn hỏi: <i>"{iq['q']}"</i></div>
-                                <div style="font-size: 13px; color: #1E293B; line-height: 1.5; margin-top: 6px; white-space: pre-wrap;">💡 <b>Bác sĩ giải đáp:</b>\n{iq['a']}</div>
+                            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;">
+                                <div style="font-size: 13px; font-weight: 700; color: #0369A1; margin-bottom: 4px;">❓ Bạn hỏi: <i>"{iq['q']}"</i></div>
+                                <div style="font-size: 13px; font-weight: 700; color: #0F172A; margin-bottom: 4px;">💡 Bác sĩ giải đáp:</div>
                             </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Render markdown trực tiếp để khoảng cách danh sách gọn gàng tự nhiên
+                        st.markdown(f"""
+                        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-top: none; border-radius: 0 0 10px 10px; padding: 0 14px 12px 14px; margin-top: -10px; margin-bottom: 8px; font-size: 13px; color: #1E293B; line-height: 1.5;">
+                            {iq['a']}
+                        </div>
                         """, unsafe_allow_html=True)
 
             st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True) 
@@ -3835,54 +4377,113 @@ elif st.session_state.main_navigation == "⚙️ Quản Trị Hệ Thống & Ph�
             st.write(f"- **{t[1]}** (`{t[2]}`): **{t[3]:,} đ**")
 
     with tab_users:
-        st.subheader("👥 Quản Lý Hồ Sơ Người Bệnh, Kê Đơn & Chỉ Định Xét Nghiệm")
+        st.subheader("👥 Quản Lý Hồ Sơ Người Bệnh, Phân Quyền & Đặt Lại Mật Khẩu")
         all_tests_catalog_tab5 = get_cached_tests_catalog()
         all_profiles = list(st.session_state.profiles_dict.items())
 
         for uid, prof in all_profiles:
+            user_account = next((acc for u_name, acc in st.session_state.users_db.items() if acc.get("user_id") == uid), {})
+            current_role = user_account.get("role", "user")
             user_is_vip = prof.get("is_vip", False)
+            user_addr = prof.get("address", "Chưa cập nhật")
 
-            with st.expander(f"👤 ID: `{uid}` | **{prof['full_name']}** | 📞 {prof.get('phone', 'N/A')} {'[⭐ VIP]' if user_is_vip else ''}"):
-                c_top_info, c_top_action = st.columns([2.2, 1])
+            with st.expander(f"👤 ID: `{uid}` | **{prof['full_name']}** (@{prof.get('username', 'N/A')}) | 📞 {prof.get('phone', 'N/A')} {'[⭐ VIP]' if user_is_vip else ''} - Quyền: `{current_role}`"):
+                c_top_info, c_top_action = st.columns([2.0, 1.2])
+
+                # CỘT TRÁI: THÔNG TIN CHI TIẾT & CHỈNH SỬA HỒ SƠ
                 with c_top_info:
+                    st.markdown("##### ✏️ Cập nhật thông tin bệnh nhân")
                     with st.form(f"form_edit_patient_{uid}"):
                         e_name = st.text_input("Họ và tên:", value=prof['full_name'], key=f"e_name_{uid}")
-                        e_phone = st.text_input("SĐT:", value=prof.get('phone', ''), key=f"e_phone_{uid}")
-                        e_age = st.number_input("Tuổi:", min_value=1, max_value=120, value=int(prof.get('age', 30)), key=f"e_age_{uid}")
-                        if st.form_submit_button("💾 Lưu Thông Tin", type="primary"):
-                            with db_cursor() as cur_up_u:
-                                cur_up_u.execute("UPDATE app_users SET full_name = %s, phone = %s, age = %s WHERE user_id = %s", (e_name.strip(), e_phone.strip(), e_age, uid))
+                        e_addr = st.text_input("🏠 Địa chỉ nơi ở / lưu trú:", value=user_addr, key=f"e_addr_{uid}")
+                        
+                        col_ep1, col_ep2 = st.columns(2)
+                        with col_ep1:
+                            e_phone = st.text_input("Số điện thoại:", value=prof.get('phone', ''), key=f"e_phone_{uid}")
+                        with col_ep2:
+                            e_email = st.text_input("Gmail:", value=prof.get('email', ''), key=f"e_email_{uid}")
 
-                            get_cached_users_from_render.clear()
+                        col_ea1, col_ea2 = st.columns(2)
+                        with col_ea1:
+                            e_age = st.number_input("Tuổi:", min_value=1, max_value=120, value=int(prof.get('age', 30)), key=f"e_age_{uid}")
+                        with col_ea2:
+                            g_opts = ["Nam", "Nữ", "Khác"]
+                            curr_g = prof.get('gender', 'Nam')
+                            e_gender = st.selectbox("Giới tính:", g_opts, index=g_opts.index(curr_g) if curr_g in g_opts else 0, key=f"e_gender_{uid}")
+
+                        if st.form_submit_button("💾 Lưu Cập Nhật Thông Tin", type="primary", width="stretch"):
+                            with db_cursor() as cur_up_u:
+                                cur_up_u.execute("""
+                                    UPDATE app_users 
+                                    SET full_name = %s, phone = %s, email = %s, age = %s, gender = %s, address = %s 
+                                    WHERE user_id = %s
+                                """, (e_name.strip(), e_phone.strip(), e_email.strip().lower(), e_age, e_gender, e_addr.strip(), uid))
+
+                            st.cache_data.clear()
                             st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
-                            st.toast("Đã cập nhật lên Render!")
+                            st.toast("✅ Đã cập nhật hồ sơ người bệnh thành công!")
                             st.rerun()
 
+                # CỘT PHẢI: ĐẶT LẠI MẬT KHẨU, PHÂN QUYỀN VÀ KHÓA/MỞ VIP
                 with c_top_action:
-                    vip_status_label = "🔒 Khóa VIP" if user_is_vip else "🔓 Mở Khóa VIP"
+                    st.markdown("##### 🛡️ Thao tác bảo mật & Đặc quyền")
+                    
+                    # 1. ĐẶT LẠI MẬT KHẨU TRỰC TIẾP
+                    with st.popover("🔑 Đặt lại mật khẩu mới", width="stretch"):
+                        st.caption(f"Đặt mật khẩu mới cho **{prof['full_name']}** (@{prof.get('username')}):")
+                        with st.form(f"form_admin_reset_pwd_{uid}"):
+                            new_admin_pwd = st.text_input("Mật khẩu mới:", type="password", placeholder="Nhập ít nhất 6 ký tự...")
+                            if st.form_submit_button("✅ Xác Nhận Đổi Mật Khẩu", type="primary", width="stretch"):
+                                if len(new_admin_pwd.strip()) < 6:
+                                    st.error("Mật khẩu phải từ 6 ký tự trở lên.")
+                                else:
+                                    with db_cursor() as cur_pwd:
+                                        cur_pwd.execute("UPDATE app_users SET password = %s WHERE user_id = %s", (new_admin_pwd.strip(), uid))
+                                    st.cache_data.clear()
+                                    st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
+                                    st.toast(f"✅ Đã đổi mật khẩu cho @{prof.get('username')} thành công!")
+                                    st.rerun()
+
+                    # 2. KHÓA / MỞ KHÓA ĐẶC QUYỀN VIP
+                    vip_status_label = "🔒 Khóa VIP" if user_is_vip else "⭐ Mở Khóa Đặc Quyền VIP"
                     if st.button(vip_status_label, key=f"btn_toggle_vip_tab5_{uid}", width="stretch"):
                         with db_cursor() as cur_vip:
                             cur_vip.execute("UPDATE app_users SET is_vip = %s WHERE user_id = %s", (0 if user_is_vip else 1, uid))
 
-                        get_cached_users_from_render.clear()
+                        st.cache_data.clear()
                         st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
-                        st.toast("Đã cập nhật VIP trên Render!")
+                        st.toast(f"Đã {'MỞ KHÓA' if not user_is_vip else 'KHÓA'} VIP cho bệnh nhân ID #{uid}!")
                         st.rerun()
 
+                    # 3. PHÂN CẤP QUYỀN (CHỈ DÀNH CHO SUPER ADMIN)
                     if IS_SUPER_ADMIN and uid != 1:
-                        if st.button("🗑️ Xóa Bệnh Nhân", key=f"del_pat_{uid}", type="primary", width="stretch"):
+                        st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
+                        role_choices = ["user", "sub_admin"]
+                        new_r = st.selectbox("Phân quyền:", role_choices, index=role_choices.index(current_role) if current_role in role_choices else 0, key=f"sel_role_{uid}")
+                        if new_r != current_role:
+                            if st.button(f"Lưu quyền: {new_r.upper()}", key=f"btn_save_role_{uid}", width="stretch"):
+                                with db_cursor() as cur_r:
+                                    cur_r.execute("UPDATE app_users SET role = %s WHERE user_id = %s", (new_r, uid))
+                                st.cache_data.clear()
+                                st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
+                                st.toast(f"Đã đổi quyền ID #{uid} thành {new_r}!")
+                                st.rerun()
+
+                        # 4. XÓA BỆNH NHÂN (SUPER ADMIN)
+                        if st.button("🗑️ Xóa Bệnh Nhân Này", key=f"del_pat_{uid}", type="secondary", width="stretch"):
                             with db_cursor() as cur_del_u:
                                 cur_del_u.execute("DELETE FROM app_users WHERE user_id = %s", (uid,))
                                 cur_del_u.execute("DELETE FROM user_prescriptions WHERE user_id = %s", (uid,))
 
-                            get_cached_users_from_render.clear()
+                            st.cache_data.clear()
                             st.session_state.users_db, st.session_state.profiles_dict = get_all_users_from_db()
-                            st.toast("Đã xóa bệnh nhân trên Render!")
+                            st.toast(f"Đã xóa bệnh nhân ID #{uid} trên hệ thống!")
                             st.rerun()
 
                 st.markdown("---")
                 col_left_med, col_right_test = st.columns(2)
 
+                # PHẦN KÊ ĐƠN THUỐC TRỰC TIẾP CHO BỆNH NHÂN
                 with col_left_med:
                     st.markdown("#### 💊 1. Kê Đơn Thuốc Trực Tiếp")
                     with st.form(f"form_doc_prescribe_{uid}"):
@@ -3901,6 +4502,7 @@ elif st.session_state.main_navigation == "⚙️ Quản Trị Hệ Thống & Ph�
                                 st.toast("Đã thêm thuốc lên Render!")
                                 st.rerun()
 
+                # PHẦN CHỈ ĐỊNH XÉT NGHIỆM RIÊNG
                 with col_right_test:
                     st.markdown("#### 🧪 2. Chỉ Định Xét Nghiệm Riêng")
                     with st.form(f"form_direct_test_indication_{uid}"):
@@ -3921,8 +4523,8 @@ elif st.session_state.main_navigation == "⚙️ Quản Trị Hệ Thống & Ph�
                             with db_cursor() as cur_save_ind:
                                 cur_save_ind.execute("""
                                     INSERT INTO medlatec_registrations (user_id, patient_name, patient_phone, package, final_price, sample_date, location_type, address, doctor_indications, indications_extra_price)
-                                    VALUES (%s, %s, %s, 'Chỉ định riêng từ Bác sĩ', 0, %s, 'Tận nhà', 'Theo hồ sơ', %s, %s)
-                                """, (uid, prof['full_name'], prof.get('phone', ''), str(datetime.date.today()), final_ind_str, total_calc))
+                                    VALUES (%s, %s, %s, 'Chỉ định riêng từ Bác sĩ', 0, %s, 'Tận nhà', %s, %s, %s)
+                                """, (uid, prof['full_name'], prof.get('phone', ''), str(datetime.date.today()), user_addr, final_ind_str, total_calc))
                             st.toast("Đã gửi chỉ định xét nghiệm lên Render!")
                             st.rerun()
 
