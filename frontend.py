@@ -3177,35 +3177,54 @@ Hãy phân tích nguyên nhân, tạo câu hỏi sàng lọc và xây dựng ph�
                         st.warning(f"⚠️ Bỏ qua ảnh lỗi: {e_img}")
 
             response = None
-            max_retries = 3
+            max_retries_per_model = 2
+            
+            # Danh sách các model theo thứ tự ưu tiên (ưu tiên model mới nhất, sau đó đến các model dự phòng)
+            candidate_models = [
+                os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash").strip() or "gemini-3.6-flash",
+                "gemini-2.5-flash",
+                "gemini-1.5-flash"
+            ]
+            # Loại bỏ các tên model bị trùng lặp nếu có
+            candidate_models = list(dict.fromkeys(candidate_models))
 
             try:
                 client = genai.Client(api_key=api_key)
-                for attempt in range(1, max_retries + 1):
-                    try:
-                        with st.spinner(f"⚡ Doctor đang kiểm tra dữ liệu hồ sơ bệnh án của bạn (Lần {attempt})..."):
-                            response = client.models.generate_content(
-                                model=model_name,
-                                contents=contents_payload,
-                                config=types.GenerateContentConfig(
-                                    system_instruction=sys_instruction,
-                                    temperature=0.0,
-                                    max_output_tokens=4096,
-                                    response_mime_type="application/json"
+                
+                # Vòng lặp duyệt qua từng model để gọi (Nếu model này nghẽn/lỗi 404/503 thì tự động chuyển sang model tiếp theo)
+                for target_model in candidate_models:
+                    success_for_this_model = False
+                    for attempt in range(1, max_retries_per_model + 1):
+                        try:
+                            with st.spinner(f"⚡ Doctor đang xử lý qua ({target_model} - Lần {attempt})..."):
+                                response = client.models.generate_content(
+                                    model=target_model,
+                                    contents=contents_payload,
+                                    config=types.GenerateContentConfig(
+                                        system_instruction=sys_instruction,
+                                        temperature=0.0,
+                                        max_output_tokens=4096,
+                                        response_mime_type="application/json"
+                                    )
                                 )
-                            )
-                        if response and response.text:
-                            break
-                    except Exception as e_call:
-                        err_str = str(e_call)
-                        if ("503" in err_str or "UNAVAILABLE" in err_str) and attempt < max_retries:
-                            time.sleep(2)
-                            continue
-                        raise e_call
-
-                if not response or not response.text:
-                    st.error("❌ Gemini không phản hồi dữ liệu.")
-                    return None
+                            if response and response.text:
+                                success_for_this_model = True
+                                break
+                        except Exception as e_call:
+                            err_str = str(e_call)
+                            # Nếu gặp lỗi quá tải (503), không tìm thấy (404) hoặc nghẽn mạng thì thử lại hoặc đổi sang model kế tiếp
+                            if ("503" in err_str or "UNAVAILABLE" in err_str or "404" in err_str or "NOT_FOUND" in err_str) and attempt < max_retries_per_model:
+                                time.sleep(1.5)
+                                continue
+                            elif "404" in err_str or "NOT_FOUND" in err_str:
+                                # Nếu model không tồn tại (404), dừng thử lại model này và nhảy sang model dự phòng kế tiếp ngay lập tức
+                                break
+                            else:
+                                if target_model == candidate_models[-1]:
+                                    raise e_call
+                    
+                    if success_for_this_model and response and response.text:
+                        break
 
                 raw_text = response.text.strip()
                 if raw_text.startswith("```json"):
@@ -3379,12 +3398,13 @@ Hãy phân tích nguyên nhân, tạo câu hỏi sàng lọc và xây dựng ph�
                         
                         client = genai.Client(api_key=api_key)
                         
-                        # Danh sách model ưu tiên kèm fallback
+                        # Danh sách model ưu tiên kèm fallback tự động
                         candidate_models = [
-                            os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash").strip() or "gemini-2.5-flash",
+                            os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash").strip() or "gemini-3.6-flash",
                             "gemini-2.5-flash",
                             "gemini-1.5-flash"
                         ]
+                        candidate_models = list(dict.fromkeys(candidate_models))
                         
                         prompt_followup = f"""Bạn là Bác sĩ Trưởng khoa điều trị. Bệnh nhân đang được chẩn đoán:
 - Bệnh chính: {top_d.get('name')} (Mã ICD-10: {top_d.get('icd')})
@@ -3397,7 +3417,8 @@ YÊU CẦU: Trả lời ngắn gọn, chuẩn y khoa theo Bộ Y Tế, rõ ràng
 
                         resp_followup = None
                         with st.spinner("👨‍⚕️ Bác sĩ đang phân tích và giải đáp thắc mắc của bạn..."):
-                            for target_model in list(dict.fromkeys(candidate_models)):
+                            for target_model in candidate_models:
+                                success_flag = False
                                 for attempt in range(1, 3):
                                     try:
                                         resp_followup = client.models.generate_content(
@@ -3406,14 +3427,15 @@ YÊU CẦU: Trả lời ngắn gọn, chuẩn y khoa theo Bộ Y Tế, rõ ràng
                                             config=types.GenerateContentConfig(temperature=0.2)
                                         )
                                         if resp_followup and resp_followup.text:
+                                            success_flag = True
                                             break
                                     except Exception as e_retry:
                                         err_str = str(e_retry)
-                                        if ("503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str):
-                                            time.sleep(1.5)
+                                        if ("503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str or "404" in err_str or "NOT_FOUND" in err_str):
+                                            time.sleep(1)
                                             continue
                                         raise e_retry
-                                if resp_followup and resp_followup.text:
+                                if success_flag and resp_followup and resp_followup.text:
                                     break
                         
                         if resp_followup and resp_followup.text:
