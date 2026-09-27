@@ -40,26 +40,49 @@ RENDER_DB_URL = "postgresql://medical_db_ghev_user:RAfswrMNjsah0eQ6ZjMqQyN4HwDKo
 # ==============================================================================
 @st.cache_resource
 def get_pg_pool():
-    """Khởi tạo Connection Pool tái sử dụng giữa các lần rerun."""
-    return ThreadedConnectionPool(minconn=1, maxconn=10, dsn=RENDER_DB_URL)
+    """Khởi tạo Connection Pool tái sử dụng giữa các lần rerun với cấu hình SSL và Timeout chuẩn."""
+    dsn = RENDER_DB_URL
+    # Tự động bổ sung các tham số bắt buộc bảo mật SSL và chống timeout nếu chưa có
+    if "sslmode" not in dsn:
+        separator = "&" if "?" in dsn else "?"
+        dsn = f"{dsn}{separator}sslmode=require"
+    if "connect_timeout" not in dsn:
+        separator = "&" if "?" in dsn else "?"
+        dsn = f"{dsn}{separator}connect_timeout=10"
+        
+    return ThreadedConnectionPool(minconn=1, maxconn=5, dsn=dsn)
 
 
 @contextmanager
 def db_cursor(cursor_factory=None):
     """Context manager tự động lấy kết nối, commit/rollback và trả về pool."""
     pool = get_pg_pool()
-    conn = pool.getconn()
-    cur = conn.cursor(cursor_factory=cursor_factory)
+    conn = None
     try:
+        conn = pool.getconn()
+        if conn.closed:
+            pool.putconn(conn, close=True)
+            conn = pool.getconn()
+            
+        cur = conn.cursor(cursor_factory=cursor_factory)
         yield cur
         conn.commit()
     except Exception as e:
-        conn.rollback()
+        if conn:
+            try:
+                conn.rollback()
+            except:
+                pass
+        # Nếu lỗi liên quan đến SSL hoặc mất kết nối, tự động clear cache resource để làm mới pool
+        if "ssl" in str(e).lower() or "closed" in str(e).lower() or "operationalerror" in str(e).lower():
+            st.cache_resource.clear()
         raise e
     finally:
-        cur.close()
-        pool.putconn(conn)
-
+        if conn:
+            try:
+                pool.putconn(conn)
+            except:
+                pass
 
 MEDLATEC_ONLINE_TESTS = [
     ("Tổng phân tích tế bào máu ngoại vi (CBC 24 thông số)", "Huyết học", 99000, "Đánh giá hồng cầu, bạch cầu, tiểu cầu, thiếu máu, nhiễm trùng"),
@@ -885,6 +908,7 @@ CSS_STYLES = r"""
         color: #FFFFFF !important;
         filter: none !important;
     }
+    
     /* Tối ưu hóa ô nhập liệu trên điện thoại để nhận phím cách và bàn phím ảo bình thường */
     input[type="text"], textarea {
         -webkit-user-select: text !important;
@@ -3177,54 +3201,35 @@ Hãy phân tích nguyên nhân, tạo câu hỏi sàng lọc và xây dựng ph�
                         st.warning(f"⚠️ Bỏ qua ảnh lỗi: {e_img}")
 
             response = None
-            max_retries_per_model = 2
-            
-            # Danh sách các model theo thứ tự ưu tiên (ưu tiên model mới nhất, sau đó đến các model dự phòng)
-            candidate_models = [
-                os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash").strip() or "gemini-3.6-flash",
-                "gemini-2.5-flash",
-                "gemini-1.5-flash"
-            ]
-            # Loại bỏ các tên model bị trùng lặp nếu có
-            candidate_models = list(dict.fromkeys(candidate_models))
+            max_retries = 3
 
             try:
                 client = genai.Client(api_key=api_key)
-                
-                # Vòng lặp duyệt qua từng model để gọi (Nếu model này nghẽn/lỗi 404/503 thì tự động chuyển sang model tiếp theo)
-                for target_model in candidate_models:
-                    success_for_this_model = False
-                    for attempt in range(1, max_retries_per_model + 1):
-                        try:
-                            with st.spinner(f"⚡ Doctor đang xử lý qua ({target_model} - Lần {attempt})..."):
-                                response = client.models.generate_content(
-                                    model=target_model,
-                                    contents=contents_payload,
-                                    config=types.GenerateContentConfig(
-                                        system_instruction=sys_instruction,
-                                        temperature=0.0,
-                                        max_output_tokens=4096,
-                                        response_mime_type="application/json"
-                                    )
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        with st.spinner(f"⚡ Doctor đang kiểm tra dữ liệu hồ sơ bệnh án của bạn (Lần {attempt})..."):
+                            response = client.models.generate_content(
+                                model=model_name,
+                                contents=contents_payload,
+                                config=types.GenerateContentConfig(
+                                    system_instruction=sys_instruction,
+                                    temperature=0.0,
+                                    max_output_tokens=4096,
+                                    response_mime_type="application/json"
                                 )
-                            if response and response.text:
-                                success_for_this_model = True
-                                break
-                        except Exception as e_call:
-                            err_str = str(e_call)
-                            # Nếu gặp lỗi quá tải (503), không tìm thấy (404) hoặc nghẽn mạng thì thử lại hoặc đổi sang model kế tiếp
-                            if ("503" in err_str or "UNAVAILABLE" in err_str or "404" in err_str or "NOT_FOUND" in err_str) and attempt < max_retries_per_model:
-                                time.sleep(1.5)
-                                continue
-                            elif "404" in err_str or "NOT_FOUND" in err_str:
-                                # Nếu model không tồn tại (404), dừng thử lại model này và nhảy sang model dự phòng kế tiếp ngay lập tức
-                                break
-                            else:
-                                if target_model == candidate_models[-1]:
-                                    raise e_call
-                    
-                    if success_for_this_model and response and response.text:
-                        break
+                            )
+                        if response and response.text:
+                            break
+                    except Exception as e_call:
+                        err_str = str(e_call)
+                        if ("503" in err_str or "UNAVAILABLE" in err_str) and attempt < max_retries:
+                            time.sleep(2)
+                            continue
+                        raise e_call
+
+                if not response or not response.text:
+                    st.error("❌ Gemini không phản hồi dữ liệu.")
+                    return None
 
                 raw_text = response.text.strip()
                 if raw_text.startswith("```json"):
@@ -3398,10 +3403,9 @@ Hãy phân tích nguyên nhân, tạo câu hỏi sàng lọc và xây dựng ph�
                         
                         client = genai.Client(api_key=api_key)
                         
-                        # Danh sách model ưu tiên kèm fallback tự động
+                        # Danh sách model ưu tiên (dùng model mới nhất)
                         candidate_models = [
                             os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash").strip() or "gemini-3.6-flash",
-                            "gemini-2.5-flash",
                             "gemini-1.5-flash"
                         ]
                         candidate_models = list(dict.fromkeys(candidate_models))
@@ -3417,8 +3421,7 @@ YÊU CẦU: Trả lời ngắn gọn, chuẩn y khoa theo Bộ Y Tế, rõ ràng
 
                         resp_followup = None
                         with st.spinner("👨‍⚕️ Bác sĩ đang phân tích và giải đáp thắc mắc của bạn..."):
-                            for target_model in candidate_models:
-                                success_flag = False
+                            for target_model in list(dict.fromkeys(candidate_models)):
                                 for attempt in range(1, 3):
                                     try:
                                         resp_followup = client.models.generate_content(
@@ -3427,15 +3430,14 @@ YÊU CẦU: Trả lời ngắn gọn, chuẩn y khoa theo Bộ Y Tế, rõ ràng
                                             config=types.GenerateContentConfig(temperature=0.2)
                                         )
                                         if resp_followup and resp_followup.text:
-                                            success_flag = True
                                             break
                                     except Exception as e_retry:
                                         err_str = str(e_retry)
-                                        if ("503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str or "404" in err_str or "NOT_FOUND" in err_str):
-                                            time.sleep(1)
+                                        if ("503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str):
+                                            time.sleep(1.5)
                                             continue
                                         raise e_retry
-                                if success_flag and resp_followup and resp_followup.text:
+                                if resp_followup and resp_followup.text:
                                     break
                         
                         if resp_followup and resp_followup.text:
@@ -4812,7 +4814,7 @@ div[data-testid="stLinkButton"]:has(a[href="https://zalo.me/0973173759"]) a:hove
 </style>
 """, unsafe_allow_html=True)
 
-st.link_button("messenger", "https://m.me/toanbvtimhn", type="secondary")
-st.link_button("Zalo", "https://zalo.me/0973173759", type="secondary")
+st.link_button("messenger", "https://m.me/toanbvtimhn")
+st.link_button("Zalo", "https://zalo.me/0973173759")
 
 st.markdown("<div class='slogan-footer'>🌟 TẤT CẢ VÌ SỨC KHỎE CỘNG ĐỒNG 🌟</div>", unsafe_allow_html=True)
